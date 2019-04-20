@@ -1,6 +1,6 @@
 <?php
 
-namespace TeamTNT\TNTSearch\Indexer;
+namespace TeamTNT\TNTSearchASFW\Indexer;
 
 use PDO;
 

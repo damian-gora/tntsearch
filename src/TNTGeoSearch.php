@@ -1,9 +1,9 @@
 <?php
 
-namespace TeamTNT\TNTSearch;
+namespace TeamTNT\TNTSearchASFW;
 
 use PDO;
-use TeamTNT\TNTSearch\Support\Collection;
+use TeamTNT\TNTSearchASFW\Support\Collection;
 
 class TNTGeoSearch extends TNTSearch
 {

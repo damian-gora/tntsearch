@@ -1,6 +1,6 @@
 <?php
 
-namespace TeamTNT\TNTSearch\FileReaders;
+namespace TeamTNT\TNTSearchASFW\FileReaders;
 
 use SplFileInfo;
 

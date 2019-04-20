@@ -66,7 +66,7 @@ composer require teamtnt/tntsearch
 
 Before you proceed make sure your server meets the following requirements:
 
-* PHP >= 7.1
+* PHP >= 5.5
 * PDO PHP Extension
 * SQLite PHP Extension
 * mbstring PHP Extension
@@ -79,7 +79,7 @@ In order to be able to make full text search queries you have to create an index
 
 Usage:
 ```php
-use TeamTNT\TNTSearch\TNTSearch;
+use TeamTNT\TNTSearchASFW\TNTSearch;
 
 $tnt = new TNTSearch;
 
@@ -90,7 +90,7 @@ $tnt->loadConfig([
     'username'  => 'user',
     'password'  => 'pass',
     'storage'   => '/var/www/tntsearch/examples/',
-    'stemmer'   => \TeamTNT\TNTSearch\Stemmer\PorterStemmer::class//optional
+    'stemmer'   => \TeamTNT\TNTSearchASFW\Stemmer\PorterStemmer::class//optional
 ]);
 
 $indexer = $tnt->createIndex('name.index');
@@ -126,7 +126,7 @@ Searching for a phrase or keyword is trivial
 
 
 ```php
-use TeamTNT\TNTSearch\TNTSearch;
+use TeamTNT\TNTSearchASFW\TNTSearch;
 
 $tnt = new TNTSearch;
 
@@ -147,7 +147,7 @@ the results in required order
 ### Boolean Search
 
 ```php
-use TeamTNT\TNTSearch\TNTSearch;
+use TeamTNT\TNTSearchASFW\TNTSearch;
 
 $tnt = new TNTSearch;
 
@@ -176,7 +176,7 @@ public $fuzzy_distance       = 2 //represents the levenshtein distance;
 ```
 
 ```php
-use TeamTNT\TNTSearch\TNTSearch;
+use TeamTNT\TNTSearchASFW\TNTSearch;
 
 $tnt = new TNTSearch;
 
@@ -195,7 +195,7 @@ Once you created an index you don't need to reindex it each time you make some c
 to your document collection. TNTSearch supports dynamic index updates.
 
 ```php
-use TeamTNT\TNTSearch\TNTSearch;
+use TeamTNT\TNTSearchASFW\TNTSearch;
 
 $tnt = new TNTSearch;
 
@@ -245,7 +245,7 @@ $candyShops = $candyShopIndex->findNearest($currentLocation, $distance, 10);
 ## Classification
 
 ```php
-use TeamTNT\TNTSearch\Classifier\TNTClassifier;
+use TeamTNT\TNTSearchASFW\Classifier\TNTClassifier;
 
 $classifier = new TNTClassifier();
 $classifier->learn("A great game", "Sports");
@@ -274,14 +274,6 @@ $classifier->load('sports.cls');
 ## Drivers
 
 * [TNTSearch Driver for Laravel Scout](https://github.com/teamtnt/laravel-scout-tntsearch-driver)
-
-## PS4Ware
-
-You're free to use this package, but if it makes it to your production environment we would highly appreciate you sending us a PS4 game of your choise. This way you support us to further develop and add new features to this package.
-
-Our address is: TNT Studio, Sv. Mateja 19, 10010 Zagreb, Croatia.
-
-We'll publish all received games on our company website.
 
 ## Support [![OpenCollective](https://opencollective.com/tntsearch/backers/badge.svg)](#backers) [![OpenCollective](https://opencollective.com/tntsearch/sponsors/badge.svg)](#sponsors)
 

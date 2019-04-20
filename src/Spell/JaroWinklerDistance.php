@@ -1,6 +1,6 @@
 <?php
 
-namespace TeamTNT\TNTSearch\Spell;
+namespace TeamTNT\TNTSearchASFW\Spell;
 
 class JaroWinklerDistance
 {

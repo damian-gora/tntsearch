@@ -1,30 +1,32 @@
 {
-    "name": "teamtnt/tntsearch",
+    "name": "damian-gora/tntsearch",
     "type": "library",
-    "description": "A fully featured full text search engine written in PHP",
+    "description": "A fully featured full text search engine written in PHP (fork)",
     "keywords": [
         "teamtnt", "tntsearch", "search", "fulltext", "geosearch", "fuzzy search"
     ],
-    "homepage": "https://github.com/teamtnt/tntsearch",
+    "homepage": "https://github.com/damian-gora/tntsearch",
     "license": "MIT",
-    "authors": [{
-        "name": "Nenad Tičarić",
-        "email": "nticaric@gmail.com",
-        "homepage": "http://www.tntstudio.us",
-        "role": "Developer"
-    }],
+    "authors": [
+        {
+            "name": "Nenad Tičarić",
+            "email": "nticaric@gmail.com",
+            "homepage": "http://www.tntstudio.us",
+            "role": "Developer"
+        }
+    ],
     "require": {
-        "php": "~7.1",
+        "php" : "~5.5|~7.0",
         "ext-pdo_sqlite": "*",
         "ext-sqlite3": "*",
         "ext-mbstring": "*"
     },
     "require-dev": {
-        "phpunit/phpunit": "7.*"
+        "phpunit/phpunit" : "5.*"
     },
     "autoload": {
         "psr-4": {
-            "TeamTNT\\TNTSearch\\": "src"
+            "TeamTNT\\TNTSearchASFW\\": "src"
         },
         "files": [
             "helper/helpers.php"

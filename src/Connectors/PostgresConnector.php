@@ -1,6 +1,6 @@
 <?php
 
-namespace TeamTNT\TNTSearch\Connectors;
+namespace TeamTNT\TNTSearchASFW\Connectors;
 
 use PDO;
 

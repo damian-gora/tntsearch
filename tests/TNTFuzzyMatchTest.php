@@ -1,13 +1,12 @@
 <?php
 
-use TeamTNT\TNTSearch\TNTFuzzyMatch;
+use TeamTNT\TNTSearchASFW\TNTFuzzyMatch;
 
-class TNTFuzzyMatchTest extends PHPUnit\Framework\TestCase
+class TNTFuzzyMatchTest extends PHPUnit_Framework_TestCase
 {
     public function __construct()
     {
         $this->fm = new TNTFuzzyMatch;
-        parent::__construct();
     }
 
     public function testNorm()

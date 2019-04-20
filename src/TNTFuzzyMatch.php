@@ -1,6 +1,6 @@
 <?php
 
-namespace TeamTNT\TNTSearch;
+namespace TeamTNT\TNTSearchASFW;
 
 class TNTFuzzyMatch
 {

@@ -1,8 +1,8 @@
 <?php
 
-use TeamTNT\TNTSearch\TNTGeoSearch;
+use TeamTNT\TNTSearchASFW\TNTGeoSearch;
 
-class TNTGeoSearchTest extends PHPUnit\Framework\TestCase
+class TNTGeoSearchTest extends PHPUnit_Framework_TestCase
 {
     protected $indexName = "cities-geo.index";
 
@@ -30,12 +30,5 @@ class TNTGeoSearchTest extends PHPUnit\Framework\TestCase
 
         $this->assertEquals([9389, 9407], $cities['ids']);
         $this->assertEquals(2, $cities['hits']);
-    }
-
-    public function tearDown(): void
-    {
-        if (file_exists(__DIR__.'/../_files/'.$this->indexName)) {
-            unlink(__DIR__.'/../_files/'.$this->indexName);
-        }
     }
 }

@@ -5,7 +5,7 @@
 * The original author is Khaled Al-Sham'aa <khaled@ar-php.org>
 */
 
-namespace TeamTNT\TNTSearch\Stemmer;
+namespace TeamTNT\TNTSearchASFW\Stemmer;
 class ArabicStemmer implements Stemmer
 {
     private static $_verbPre  = 'وأسفلي';

@@ -1,16 +1,16 @@
 <?php
 
-namespace TeamTNT\TNTSearch;
+namespace TeamTNT\TNTSearchASFW;
 
 use PDO;
-use TeamTNT\TNTSearch\Exceptions\IndexNotFoundException;
-use TeamTNT\TNTSearch\Indexer\TNTIndexer;
-use TeamTNT\TNTSearch\Stemmer\PorterStemmer;
-use TeamTNT\TNTSearch\Support\Collection;
-use TeamTNT\TNTSearch\Support\Expression;
-use TeamTNT\TNTSearch\Support\Highlighter;
-use TeamTNT\TNTSearch\Support\Tokenizer;
-use TeamTNT\TNTSearch\Support\TokenizerInterface;
+use TeamTNT\TNTSearchASFW\Exceptions\IndexNotFoundException;
+use TeamTNT\TNTSearchASFW\Indexer\TNTIndexer;
+use TeamTNT\TNTSearchASFW\Stemmer\PorterStemmer;
+use TeamTNT\TNTSearchASFW\Support\Collection;
+use TeamTNT\TNTSearchASFW\Support\Expression;
+use TeamTNT\TNTSearchASFW\Support\Highlighter;
+use TeamTNT\TNTSearchASFW\Support\Tokenizer;
+use TeamTNT\TNTSearchASFW\Support\TokenizerInterface;
 
 class TNTSearch
 {
@@ -51,13 +51,22 @@ class TNTSearch
     }
 
     /**
+     * @param TokenizerInterface $tokenizer
+     */
+    public function setTokenizer(TokenizerInterface $tokenizer)
+    {
+        $this->tokenizer = $tokenizer;
+    }
+
+    /**
      * @param string $indexName
      * @param boolean $disableOutput
      *
      * @return TNTIndexer
      */
-    public function createIndex($indexName, $disableOutput = false)
+    public function createIndex($deprecated = '', $disableOutput = false)
     {
+
         $indexer = new TNTIndexer;
         $indexer->loadConfig($this->config);
         $indexer->disableOutput = $disableOutput;
@@ -65,7 +74,7 @@ class TNTSearch
         if ($this->dbh) {
             $indexer->setDatabaseHandle($this->dbh);
         }
-        return $indexer->createIndex($indexName);
+        return $indexer->createIndex();
     }
 
     /**
@@ -73,16 +82,18 @@ class TNTSearch
      *
      * @throws IndexNotFoundException
      */
-    public function selectIndex($indexName)
+    public function selectIndex($deprecated = '')
     {
-        $pathToIndex = $this->config['storage'].$indexName;
-        if (!file_exists($pathToIndex)) {
-            throw new IndexNotFoundException("Index {$pathToIndex} does not exist", 1);
-        }
-        $this->index = new PDO('sqlite:'.$pathToIndex);
+
+        $dbName = DB_NAME;
+        $dbUser = DB_USER;
+        $dbPassword = DB_PASSWORD;
+        $dbHost = DB_HOST;
+        $dbCharset = DB_CHARSET;
+
+        $this->index = new PDO("mysql:host=$dbHost;dbname=$dbName;charset=$dbCharset", $dbUser, $dbPassword);
         $this->index->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $this->setStemmer();
-        $this->setTokenizer();
     }
 
     /**
@@ -151,6 +162,9 @@ class TNTSearch
      */
     public function searchBoolean($phrase, $numOfResults = 100)
     {
+        $keywords   = $this->breakIntoTokens($phrase);
+        $lastKeyword = end($keywords);
+
         $stack      = [];
         $startTimer = microtime(true);
 
@@ -162,12 +176,14 @@ class TNTSearch
                 $left  = array_pop($stack);
                 $right = array_pop($stack);
                 if (is_string($left)) {
-                    $left = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true)
-                        ->pluck('doc_id');
+                    $isLastKeyword = $left == $lastKeyword;
+                    $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true, $isLastKeyword)
+                                          ->pluck('doc_id');
                 }
                 if (is_string($right)) {
-                    $right = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true)
-                        ->pluck('doc_id');
+                    $isLastKeyword = $right == $lastKeyword;
+                    $right = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true, $isLastKeyword)
+                                  ->pluck('doc_id');
                 }
                 if (is_null($left)) {
                     $left = [];
@@ -183,12 +199,14 @@ class TNTSearch
                 $right = array_pop($stack);
 
                 if (is_string($left)) {
-                    $left = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true)
-                        ->pluck('doc_id');
+                    $isLastKeyword = $left == $lastKeyword;
+                    $left = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true, $isLastKeyword)
+                                 ->pluck('doc_id');
                 }
                 if (is_string($right)) {
-                    $right = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true)
-                        ->pluck('doc_id');
+                    $isLastKeyword = $right == $lastKeyword;
+                    $right = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true, $isLastKeyword)
+                                  ->pluck('doc_id');
                 }
                 if (is_null($left)) {
                     $left = [];
@@ -262,13 +280,15 @@ class TNTSearch
      */
     public function getAllDocumentsForWhereKeywordNot($keyword, $noLimit = false)
     {
+        global $wpdb;
+
         $word = $this->getWordlistByKeyword($keyword);
         if (!isset($word[0])) {
             return new Collection([]);
         }
-        $query = "SELECT * FROM doclist WHERE doc_id NOT IN (SELECT doc_id FROM doclist WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
+        $query = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE doc_id NOT IN (SELECT doc_id FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
         if ($noLimit) {
-            $query = "SELECT * FROM doclist WHERE doc_id NOT IN (SELECT doc_id FROM doclist WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC";
+            $query = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE doc_id NOT IN (SELECT doc_id FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC";
         }
         $stmtDoc = $this->index->prepare($query);
 
@@ -301,11 +321,13 @@ class TNTSearch
      */
     public function getWordlistByKeyword($keyword, $isLastWord = false)
     {
-        $searchWordlist = "SELECT * FROM wordlist WHERE term like :keyword LIMIT 1";
+        global $wpdb;
+
+        $searchWordlist = "SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword LIMIT 1";
         $stmtWord       = $this->index->prepare($searchWordlist);
 
         if ($this->asYouType && $isLastWord) {
-            $searchWordlist = "SELECT * FROM wordlist WHERE term like :keyword ORDER BY length(term) ASC, num_hits DESC LIMIT 1";
+            $searchWordlist = "SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword ORDER BY length(term) ASC, num_hits DESC LIMIT 1";
             $stmtWord       = $this->index->prepare($searchWordlist);
             $stmtWord->bindValue(':keyword', mb_strtolower($keyword)."%");
         } else {
@@ -327,8 +349,10 @@ class TNTSearch
      */
     public function fuzzySearch($keyword)
     {
+        global $wpdb;
+
         $prefix         = substr($keyword, 0, $this->fuzzy_prefix_length);
-        $searchWordlist = "SELECT * FROM wordlist WHERE term like :keyword ORDER BY num_hits DESC LIMIT {$this->fuzzy_max_expansions}";
+        $searchWordlist = "SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword ORDER BY num_hits DESC LIMIT {$this->fuzzy_max_expansions}";
         $stmtWord       = $this->index->prepare($searchWordlist);
         $stmtWord->bindValue(':keyword', mb_strtolower($prefix)."%");
         $stmtWord->execute();
@@ -375,16 +399,6 @@ class TNTSearch
         }
     }
 
-    public function setTokenizer()
-    {
-        $tokenizer = $this->getValueFromInfoTable('tokenizer');
-        if ($tokenizer) {
-            $this->tokenizer = new $tokenizer;
-        } else {
-            $this->tokenizer = isset($this->config['tokenizer']) ? new $this->config['tokenizer'] : new Tokenizer;
-        }
-    }
-
     /**
      * @return bool
      */
@@ -395,10 +409,12 @@ class TNTSearch
 
     public function getValueFromInfoTable($value)
     {
-        $query = "SELECT * FROM info WHERE key = '$value'";
+        global $wpdb;
+
+        $query = "SELECT * FROM $wpdb->dgwt_wcas_si_info WHERE ikey = '$value'";
         $docs  = $this->index->query($query);
 
-        return $docs->fetch(PDO::FETCH_ASSOC)['value'];
+        return $docs->fetch(PDO::FETCH_ASSOC)['ivalue'];
     }
 
     public function filesystemMapIdsToPaths($docs)
@@ -451,7 +467,6 @@ class TNTSearch
         $indexer->inMemory = false;
         $indexer->setIndex($this->index);
         $indexer->setStemmer($this->stemmer);
-        $indexer->setTokenizer($this->tokenizer);
         return $indexer;
     }
 
@@ -463,19 +478,20 @@ class TNTSearch
      */
     private function getAllDocumentsForFuzzyKeyword($words, $noLimit)
     {
+        global $wpdb;
+
         $binding_params = implode(',', array_fill(0, count($words), '?'));
-        $query          = "SELECT * FROM doclist WHERE term_id in ($binding_params) ORDER BY CASE term_id";
-        $order_counter  = 1;
+        $query          = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id in ($binding_params) ORDER BY CASE term_id";
+        $order_counter  =   1;
 
         foreach ($words as $word) {
-            $query .= " WHEN ".$word['id']." THEN ".$order_counter++;
+            $query .= " WHEN " . $word['id'] . " THEN " . $order_counter++;
         }
 
         $query .= " END";
 
-        if (!$noLimit) {
+        if (!$noLimit)
             $query .= " LIMIT {$this->maxDocs}";
-        }
 
         $stmtDoc = $this->index->prepare($query);
 
@@ -496,9 +512,11 @@ class TNTSearch
      */
     private function getAllDocumentsForStrictKeyword($word, $noLimit)
     {
-        $query = "SELECT * FROM doclist WHERE term_id = :id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
+        global $wpdb;
+
+        $query = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id = :id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
         if ($noLimit) {
-            $query = "SELECT * FROM doclist WHERE term_id = :id ORDER BY hit_count DESC";
+            $query = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id = :id ORDER BY hit_count DESC";
         }
         $stmtDoc = $this->index->prepare($query);
 

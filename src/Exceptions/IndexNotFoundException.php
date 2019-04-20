@@ -1,6 +1,6 @@
 <?php
 
-namespace TeamTNT\TNTSearch\Exceptions;
+namespace TeamTNT\TNTSearchASFW\Exceptions;
 
 use Exception;
 

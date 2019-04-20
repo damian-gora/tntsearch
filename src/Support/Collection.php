@@ -1,6 +1,6 @@
 <?php
 
-namespace TeamTNT\TNTSearch\Support;
+namespace TeamTNT\TNTSearchASFW\Support;
 
 use ArrayIterator;
 use Countable;

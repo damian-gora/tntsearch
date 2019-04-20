@@ -1,9 +1,9 @@
 <?php
 
-namespace TeamTNT\TNTSearch\Classifier;
+namespace TeamTNT\TNTSearchASFW\Classifier;
 
-use TeamTNT\TNTSearch\Stemmer\PorterStemmer;
-use TeamTNT\TNTSearch\Support\Tokenizer;
+use TeamTNT\TNTSearchASFW\Stemmer\PorterStemmer;
+use TeamTNT\TNTSearchASFW\Support\Tokenizer;
 
 class TNTClassifier
 {

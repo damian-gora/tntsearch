@@ -1,22 +1,24 @@
 <?php
 
-namespace TeamTNT\TNTSearch\Indexer;
+namespace TeamTNT\TNTSearchASFW\Indexer;
 
 use Exception;
 use PDO;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
-use TeamTNT\TNTSearch\Connectors\FileSystemConnector;
-use TeamTNT\TNTSearch\Connectors\MySqlConnector;
-use TeamTNT\TNTSearch\Connectors\PostgresConnector;
-use TeamTNT\TNTSearch\Connectors\SQLiteConnector;
-use TeamTNT\TNTSearch\Connectors\SqlServerConnector;
-use TeamTNT\TNTSearch\FileReaders\TextFileReader;
-use TeamTNT\TNTSearch\Stemmer\CroatianStemmer;
-use TeamTNT\TNTSearch\Stemmer\PorterStemmer;
-use TeamTNT\TNTSearch\Support\Collection;
-use TeamTNT\TNTSearch\Support\Tokenizer;
-use TeamTNT\TNTSearch\Support\TokenizerInterface;
+use TeamTNT\TNTSearchASFW\Connectors\FileSystemConnector;
+use TeamTNT\TNTSearchASFW\Connectors\MySqlConnector;
+use TeamTNT\TNTSearchASFW\Connectors\PostgresConnector;
+use TeamTNT\TNTSearchASFW\Connectors\SQLiteConnector;
+use TeamTNT\TNTSearchASFW\Connectors\SqlServerConnector;
+use TeamTNT\TNTSearchASFW\FileReaders\TextFileReader;
+use TeamTNT\TNTSearchASFW\Stemmer\CroatianStemmer;
+use TeamTNT\TNTSearchASFW\Stemmer\PorterStemmer;
+use TeamTNT\TNTSearchASFW\Support\Collection;
+use TeamTNT\TNTSearchASFW\Support\Tokenizer;
+use TeamTNT\TNTSearchASFW\Support\TokenizerInterface;
+use DgoraWcas\Engines\TNTSearch\Indexer\Searchable\Database;
+use DgoraWcas\Engines\TNTSearch\Indexer\Buildier;
 
 class TNTIndexer
 {
@@ -52,8 +54,6 @@ class TNTIndexer
     public function setTokenizer(TokenizerInterface $tokenizer)
     {
         $this->tokenizer = $tokenizer;
-        $class           = get_class($tokenizer);
-        $this->index->exec("INSERT INTO info ( 'key', 'value') values ( 'tokenizer', '$class')");
     }
 
     public function setStopWords(array $stopWords)
@@ -68,13 +68,8 @@ class TNTIndexer
     {
         $this->config            = $config;
         $this->config['storage'] = rtrim($this->config['storage'], '/').'/';
-
         if (!isset($this->config['driver'])) {
             $this->config['driver'] = "";
-        }
-
-        if (isset($this->config['tokenizer'])) {
-            $this->tokenizer = new $this->config['tokenizer'];
         }
 
     }
@@ -123,9 +118,11 @@ class TNTIndexer
 
     public function setStemmer($stemmer)
     {
+        global $wpdb;
+
         $this->stemmer = $stemmer;
         $class         = get_class($stemmer);
-        $this->index->exec("INSERT INTO info ( 'key', 'value') values ( 'stemmer', '$class')");
+        $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'stemmer', '$class')");
     }
 
     public function setCroatianStemmer()
@@ -157,10 +154,12 @@ class TNTIndexer
 
     public function prepareStatementsForIndex()
     {
+        global $wpdb;
+
         if (!$this->statementsPrepared) {
-            $this->insertWordlistStmt = $this->index->prepare("INSERT INTO wordlist (term, num_hits, num_docs) VALUES (:keyword, :hits, :docs)");
-            $this->selectWordlistStmt = $this->index->prepare("SELECT * FROM wordlist WHERE term like :keyword LIMIT 1");
-            $this->updateWordlistStmt = $this->index->prepare("UPDATE wordlist SET num_docs = num_docs + :docs, num_hits = num_hits + :hits WHERE term = :keyword");
+            $this->insertWordlistStmt = $this->index->prepare("INSERT INTO $wpdb->dgwt_wcas_si_wordlist (term, num_hits, num_docs) VALUES (:keyword, :hits, :docs)");
+            $this->selectWordlistStmt = $this->index->prepare("SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword LIMIT 1");
+            $this->updateWordlistStmt = $this->index->prepare("UPDATE $wpdb->dgwt_wcas_si_wordlist SET num_docs = num_docs + :docs, num_hits = num_hits + :hits WHERE term = :keyword");
             $this->statementsPrepared = true;
         }
     }
@@ -170,48 +169,20 @@ class TNTIndexer
      *
      * @return TNTIndexer
      */
-    public function createIndex($indexName)
+    public function createIndex($deprecated = '')
     {
-        $this->indexName = $indexName;
+        $this->indexName = $deprecated;
 
-        if (file_exists($this->config['storage'].$indexName)) {
-            unlink($this->config['storage'].$indexName);
-        }
+        Database::create();
 
-        $this->index = new PDO('sqlite:'.$this->config['storage'].$indexName);
+        $dbName     = DB_NAME;
+        $dbUser     = DB_USER;
+        $dbPassword = DB_PASSWORD;
+        $dbHost     = DB_HOST;
+        $dbCharset  = DB_CHARSET;
+
+        $this->index = new PDO("mysql:host=$dbHost;dbname=$dbName;charset=$dbCharset", $dbUser, $dbPassword);
         $this->index->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-        $this->index->exec("CREATE TABLE IF NOT EXISTS wordlist (
-                    id INTEGER PRIMARY KEY,
-                    term TEXT UNIQUE COLLATE nocase,
-                    num_hits INTEGER,
-                    num_docs INTEGER)");
-
-        $this->index->exec("CREATE UNIQUE INDEX 'main'.'index' ON wordlist ('term');");
-
-        $this->index->exec("CREATE TABLE IF NOT EXISTS doclist (
-                    term_id INTEGER,
-                    doc_id INTEGER,
-                    hit_count INTEGER)");
-
-        $this->index->exec("CREATE TABLE IF NOT EXISTS fields (
-                    id INTEGER PRIMARY KEY,
-                    name TEXT)");
-
-        $this->index->exec("CREATE TABLE IF NOT EXISTS hitlist (
-                    term_id INTEGER,
-                    doc_id INTEGER,
-                    field_id INTEGER,
-                    position INTEGER,
-                    hit_count INTEGER)");
-
-        $this->index->exec("CREATE TABLE IF NOT EXISTS info (
-                    key TEXT,
-                    value INTEGER)");
-
-        $this->index->exec("INSERT INTO info ( 'key', 'value') values ( 'total_documents', 0)");
-
-        $this->index->exec("CREATE INDEX IF NOT EXISTS 'main'.'term_id_index' ON doclist ('term_id' COLLATE BINARY);");
 
         if (!$this->dbh) {
             $connector = $this->createConnector($this->config);
@@ -279,6 +250,8 @@ class TNTIndexer
             return $this->readDocumentsFromFileSystem();
         }
 
+        $time = microtime(true);
+
         $result = $this->dbh->query($this->query);
 
         $counter = 0;
@@ -289,23 +262,32 @@ class TNTIndexer
             $this->processDocument(new Collection($row));
 
             if ($counter % $this->steps == 0) {
-                $this->info("Processed $counter rows");
-            }
-            if ($counter % 10000 == 0) {
+
                 $this->index->commit();
+
+                $ntime = number_format(microtime(true) - $time, 4, '.', '') . ' s';
+                Buildier::log( "[Searchable index] Processed $counter products in $ntime", $error = false);
+                Buildier::addInfo('searchable_processed', $counter);
+                $time = microtime(true);
+
                 $this->index->beginTransaction();
-                $this->info("Commited");
+
             }
+
         }
         $this->index->commit();
 
+
         $this->updateInfoTable('total_documents', $counter);
+        Buildier::addInfo('searchable_processed', $counter);
 
         $this->info("Total rows $counter");
     }
 
     public function readDocumentsFromFileSystem()
     {
+        global $wpdb;
+
         $exclude = [];
         if (isset($this->config['exclude'])) {
             $exclude = $this->config['exclude'];
@@ -357,8 +339,8 @@ class TNTIndexer
 
         $this->index->commit();
 
-        $this->index->exec("INSERT INTO info ( 'key', 'value') values ( 'total_documents', $counter)");
-        $this->index->exec("INSERT INTO info ( 'key', 'value') values ( 'driver', 'filesystem')");
+        $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'total_documents', $counter)");
+        $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'driver', 'filesystem')");
 
         $this->info("Total rows $counter");
         $this->info("Index created: {$this->config['storage']}");
@@ -394,11 +376,13 @@ class TNTIndexer
 
     public function delete($documentId)
     {
-        $rows = $this->prepareAndExecuteStatement("SELECT * FROM doclist WHERE doc_id = :documentId;", [
+        global $wpdb;
+
+        $rows = $this->prepareAndExecuteStatement("SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE doc_id = :documentId;", [
             ['key' => ':documentId', 'value' => $documentId]
         ])->fetchAll(PDO::FETCH_ASSOC);
 
-        $updateStmt = $this->index->prepare("UPDATE wordlist SET num_docs = num_docs - 1, num_hits = num_hits - :hits WHERE id = :term_id");
+        $updateStmt = $this->index->prepare("UPDATE $wpdb->dgwt_wcas_si_wordlist SET num_docs = num_docs - 1, num_hits = num_hits - :hits WHERE id = :term_id");
 
         foreach ($rows as $document) {
             $updateStmt->bindParam(":hits", $document['hit_count']);
@@ -406,11 +390,11 @@ class TNTIndexer
             $updateStmt->execute();
         }
 
-        $this->prepareAndExecuteStatement("DELETE FROM doclist WHERE doc_id = :documentId;", [
+        $this->prepareAndExecuteStatement("DELETE FROM $wpdb->dgwt_wcas_si_doclist WHERE doc_id = :documentId;", [
             ['key' => ':documentId', 'value' => $documentId]
         ]);
 
-        $res = $this->prepareAndExecuteStatement("DELETE FROM wordlist WHERE num_hits = 0");
+        $res = $this->prepareAndExecuteStatement("DELETE FROM $wpdb->dgwt_wcas_si_wordlist WHERE num_hits = 0");
 
         $affected = $res->rowCount();
 
@@ -422,7 +406,9 @@ class TNTIndexer
 
     public function updateInfoTable($key, $value)
     {
-        $this->index->exec("UPDATE info SET value = $value WHERE key = '$key'");
+        global $wpdb;
+
+        $this->index->exec("UPDATE $wpdb->dgwt_wcas_si_info SET ivalue = $value WHERE ikey = '$key'");
     }
 
     public function stemText($text)
@@ -520,7 +506,9 @@ class TNTIndexer
 
     public function saveDoclist($terms, $docId)
     {
-        $insert = "INSERT INTO doclist (term_id, doc_id, hit_count) VALUES (:id, :doc, :hits)";
+        global $wpdb;
+
+        $insert = "INSERT INTO $wpdb->dgwt_wcas_si_doclist (term_id, doc_id, hit_count) VALUES (:id, :doc, :hits)";
         $stmt   = $this->index->prepare($insert);
 
         foreach ($terms as $key => $term) {
@@ -539,10 +527,12 @@ class TNTIndexer
     public function saveHitList($stems, $docId, $termsList)
     {
         return;
+        global $wpdb;
+
         $fieldCounter = 0;
         $fields       = [];
 
-        $insert = "INSERT INTO hitlist (term_id, doc_id, field_id, position, hit_count)
+        $insert = "INSERT INTO $wpdb->dgwt_wcas_si_hitlist (term_id, doc_id, field_id, position, hit_count)
                    VALUES (:term_id, :doc_id, :field_id, :position, :hit_count)";
         $stmt = $this->index->prepare($insert);
 
@@ -567,7 +557,9 @@ class TNTIndexer
 
     public function getWordFromWordList($word)
     {
-        $selectStmt = $this->index->prepare("SELECT * FROM wordlist WHERE term like :keyword LIMIT 1");
+        global $wpdb;
+
+        $selectStmt = $this->index->prepare("SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword LIMIT 1");
         $selectStmt->bindValue(':keyword', $word);
         $selectStmt->execute();
         return $selectStmt->fetch(PDO::FETCH_ASSOC);
@@ -605,7 +597,9 @@ class TNTIndexer
 
     public function buildDictionary($filename, $count = -1, $hits = true, $docs = false)
     {
-        $selectStmt = $this->index->prepare("SELECT * FROM wordlist ORDER BY num_hits DESC;");
+        global $wpdb;
+
+        $selectStmt = $this->index->prepare("SELECT * FROM $wpdb->dgwt_wcas_si_wordlist ORDER BY num_hits DESC;");
         $selectStmt->execute();
 
         $dictionary = "";
@@ -637,7 +631,9 @@ class TNTIndexer
      */
     public function totalDocumentsInCollection()
     {
-        $query = "SELECT * FROM info WHERE key = 'total_documents'";
+        global $wpdb;
+
+        $query = "SELECT * FROM $wpdb->dgwt_wcas_si_info WHERE ikey = 'total_documents'";
         $docs  = $this->index->query($query);
 
         return $docs->fetch(PDO::FETCH_ASSOC)['value'];

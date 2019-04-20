@@ -1,8 +1,8 @@
 <?php
 
-use TeamTNT\TNTSearch\Classifier\TNTClassifier;
+use TeamTNT\TNTSearchASFW\Classifier\TNTClassifier;
 
-class TNTClassifierTest extends PHPUnit\Framework\TestCase
+class TNTClassifierTest extends PHPUnit_Framework_TestCase
 {
     public function testPredictSpamHam()
     {

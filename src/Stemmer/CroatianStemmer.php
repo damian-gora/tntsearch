@@ -5,7 +5,7 @@ This is a reimplementation in PHP of a simple rule-based stemmer for Croatian
 at http://nlp.ffzg.hr/resources/tools/stemmer-for-croatian/ (Python).
 The original author is Ivan Pandžić. */
 
-namespace TeamTNT\TNTSearch\Stemmer;
+namespace TeamTNT\TNTSearchASFW\Stemmer;
 
 class CroatianStemmer implements Stemmer
 {

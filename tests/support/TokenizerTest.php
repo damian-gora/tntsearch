@@ -1,8 +1,8 @@
 <?php
 
-use TeamTNT\TNTSearch\Support\Tokenizer;
+use TeamTNT\TNTSearchASFW\Support\Tokenizer;
 
-class TokenizerTest extends PHPUnit\Framework\TestCase
+class TokenizerTest extends PHPUnit_Framework_TestCase
 {
     public function testTokenize()
     {

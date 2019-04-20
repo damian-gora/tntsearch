@@ -1,21 +1,19 @@
 <?php
 
-use TeamTNT\TNTSearch\Indexer\TNTIndexer;
-use TeamTNT\TNTSearch\Support\TokenizerInterface;
-use TeamTNT\TNTSearch\TNTSearch;
+use TeamTNT\TNTSearchASFW\Indexer\TNTIndexer;
+use TeamTNT\TNTSearchASFW\Support\TokenizerInterface;
+use TeamTNT\TNTSearchASFW\TNTSearch;
 
-class TNTIndexerTest extends PHPUnit\Framework\TestCase
+class TNTIndexerTest extends PHPUnit_Framework_TestCase
 {
     protected $indexName = "testIndex";
     protected $config    = [
-        'driver'    => 'sqlite',
-        'database'  => __DIR__.'/../_files/articles.sqlite',
-        'host'      => 'localhost',
-        'username'  => 'testUser',
-        'password'  => 'testPass',
-        'storage'   => __DIR__.'/../_files/',
-        'tokenizer' => TeamTNT\TNTSearch\Support\ProductTokenizer::class
-
+        'driver'   => 'sqlite',
+        'database' => __DIR__.'/../_files/articles.sqlite',
+        'host'     => 'localhost',
+        'username' => 'testUser',
+        'password' => 'testPass',
+        'storage'  => __DIR__.'/../_files/'
     ];
 
     public function testSearch()
@@ -61,7 +59,7 @@ class TNTIndexerTest extends PHPUnit\Framework\TestCase
         $count = $index->countWordInWordList('document');
 
         $this->assertTrue($count == 3, 'Word document should be 3');
-        $this->assertEquals('TeamTNT\TNTSearch\Stemmer\PorterStemmer', get_class($tnt->getStemmer()));
+        $this->assertEquals('TeamTNT\TNTSearchASFW\Stemmer\PorterStemmer', get_class($tnt->getStemmer()));
     }
 
     public function testIfCroatianStemmerIsSet()
@@ -80,10 +78,10 @@ class TNTIndexerTest extends PHPUnit\Framework\TestCase
         $query       = "SELECT * FROM info WHERE key = 'stemmer'";
         $docs        = $this->index->query($query);
         $value       = $docs->fetch(PDO::FETCH_ASSOC)['value'];
-        $this->assertEquals('TeamTNT\TNTSearch\Stemmer\CroatianStemmer', $value);
+        $this->assertEquals('TeamTNT\TNTSearchASFW\Stemmer\CroatianStemmer', $value);
 
         $tnt->selectIndex($this->indexName);
-        $this->assertEquals('TeamTNT\TNTSearch\Stemmer\CroatianStemmer', get_class($tnt->getStemmer()));
+        $this->assertEquals('TeamTNT\TNTSearchASFW\Stemmer\CroatianStemmer', get_class($tnt->getStemmer()));
     }
 
     public function testIfGermanStemmerIsSet()
@@ -102,10 +100,10 @@ class TNTIndexerTest extends PHPUnit\Framework\TestCase
         $query       = "SELECT * FROM info WHERE key = 'stemmer'";
         $docs        = $this->index->query($query);
         $value       = $docs->fetch(PDO::FETCH_ASSOC)['value'];
-        $this->assertEquals('TeamTNT\TNTSearch\Stemmer\GermanStemmer', $value);
+        $this->assertEquals('TeamTNT\TNTSearchASFW\Stemmer\GermanStemmer', $value);
 
         $tnt->selectIndex($this->indexName);
-        $this->assertEquals('TeamTNT\TNTSearch\Stemmer\GermanStemmer', get_class($tnt->getStemmer()));
+        $this->assertEquals('TeamTNT\TNTSearchASFW\Stemmer\GermanStemmer', get_class($tnt->getStemmer()));
     }
 
     public function testBuildTrigrams()
@@ -131,7 +129,7 @@ class TNTIndexerTest extends PHPUnit\Framework\TestCase
 
     }
 
-    public function tearDown(): void
+    public function tearDown()
     {
         if (file_exists(__DIR__.'/../_files/'.$this->indexName)) {
             unlink(__DIR__.'/../_files/'.$this->indexName);
@@ -140,16 +138,10 @@ class TNTIndexerTest extends PHPUnit\Framework\TestCase
 
     public function testSetTokenizer()
     {
+        $someTokenizer = new SomeTokenizer;
 
-        $tnt = new TNTSearch;
-
-        $tnt->loadConfig($this->config);
-
-        $indexer = $tnt->createIndex($this->indexName);
-        $indexer->query('SELECT id, title, article FROM articles;');
-        $indexer->setTokenizer(new SomeTokenizer);
-        $indexer->disableOutput = true;
-        $indexer->run();
+        $indexer = new TNTIndexer;
+        $indexer->setTokenizer($someTokenizer);
 
         $this->assertInstanceOf(TokenizerInterface::class, $indexer->tokenizer);
 

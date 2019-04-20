@@ -1,8 +1,8 @@
 <?php
 
-use TeamTNT\TNTSearch\Support\Expression;
+use TeamTNT\TNTSearchASFW\Support\Expression;
 
-class ExpressionTest extends PHPUnit\Framework\TestCase
+class ExpressionTest extends PHPUnit_Framework_TestCase
 {
     public function testToPostfix()
     {

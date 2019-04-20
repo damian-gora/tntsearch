@@ -1,12 +1,11 @@
 <?php
 
-namespace TeamTNT\TNTSearch\Connectors;
+namespace TeamTNT\TNTSearchASFW\Connectors;
 
 use Exception;
 
 class SQLiteConnector extends Connector implements ConnectorInterface
 {
-    protected $options = [];
     /**
      * Establish a database connection.
      *

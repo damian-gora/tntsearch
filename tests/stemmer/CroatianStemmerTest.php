@@ -1,8 +1,8 @@
 <?php
 
-use TeamTNT\TNTSearch\Stemmer\CroatianStemmer;
+use TeamTNT\TNTSearchASFW\Stemmer\CroatianStemmer;
 
-class CroatianStemmerTest extends PHPUnit\Framework\TestCase
+class CroatianStemmerTest extends PHPUnit_Framework_TestCase
 {
     public function testIstakniSlogotvornoR()
     {

@@ -1,4 +1,4 @@
-<?php namespace TeamTNT\TNTSearch\Stemmer;
+<?php namespace TeamTNT\TNTSearchASFW\Stemmer;
 
 interface Stemmer
 {

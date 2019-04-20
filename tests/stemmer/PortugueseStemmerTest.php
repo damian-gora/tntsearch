@@ -1,8 +1,8 @@
 <?php
 
-use TeamTNT\TNTSearch\Stemmer\PortugueseStemmer;
+use TeamTNT\TNTSearchASFW\Stemmer\PortugueseStemmer;
 
-class PortugueseStemmerTestTest extends PHPUnit\Framework\TestCase
+class PortugueseStemmerTestTest extends PHPUnit_Framework_TestCase
 {
 
     public function testStem()
