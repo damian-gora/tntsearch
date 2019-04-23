@@ -17,8 +17,8 @@ use TeamTNT\TNTSearchASFW\Stemmer\PorterStemmer;
 use TeamTNT\TNTSearchASFW\Support\Collection;
 use TeamTNT\TNTSearchASFW\Support\Tokenizer;
 use TeamTNT\TNTSearchASFW\Support\TokenizerInterface;
-use DgoraWcas\Engines\TNTSearch\Indexer\Searchable\Database;
-use DgoraWcas\Engines\TNTSearch\Indexer\Buildier;
+use DgoraWcas\Engines\TNTSearchMySQL\Indexer\Searchable\Database;
+use DgoraWcas\Engines\TNTSearchMySQL\Indexer\Buildier;
 
 class TNTIndexer
 {
