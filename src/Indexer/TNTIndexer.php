@@ -121,7 +121,8 @@ class TNTIndexer
         global $wpdb;
 
         $this->stemmer = $stemmer;
-        $class         = get_class($stemmer);
+        $class         = addslashes(get_class($stemmer));
+
         $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'stemmer', '$class')");
     }
 
@@ -467,6 +468,7 @@ class TNTIndexer
         });
 
         foreach ($terms as $key => $term) {
+
             try {
                 $this->insertWordlistStmt->bindParam(":keyword", $key);
                 $this->insertWordlistStmt->bindParam(":hits", $term['hits']);
@@ -478,17 +480,19 @@ class TNTIndexer
                     $this->inMemoryTerms[$key] = $terms[$key]['id'];
                 }
             } catch (\Exception $e) {
+
                 if ($e->getCode() == 23000) {
                     $this->updateWordlistStmt->bindValue(':docs', $term['docs']);
                     $this->updateWordlistStmt->bindValue(':hits', $term['hits']);
                     $this->updateWordlistStmt->bindValue(':keyword', $key);
                     $this->updateWordlistStmt->execute();
-                    if (!$this->inMemory) {
+                    if (!$this->inMemory || !array_key_exists($key, $this->inMemoryTerms)) {
                         $this->selectWordlistStmt->bindValue(':keyword', $key);
                         $this->selectWordlistStmt->execute();
                         $res               = $this->selectWordlistStmt->fetch(PDO::FETCH_ASSOC);
                         $terms[$key]['id'] = $res['id'];
                     } else {
+
                         $terms[$key]['id'] = $this->inMemoryTerms[$key];
                     }
                 } else {
