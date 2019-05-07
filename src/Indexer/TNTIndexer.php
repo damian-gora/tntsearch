@@ -172,6 +172,8 @@ class TNTIndexer
      */
     public function createIndex($deprecated = '')
     {
+        global $wpdb;
+
         $this->indexName = $deprecated;
 
         Database::create();
@@ -182,7 +184,17 @@ class TNTIndexer
         $dbHost     = DB_HOST;
         $dbCharset  = DB_CHARSET;
 
-        $this->index = new PDO("mysql:host=$dbHost;dbname=$dbName;charset=$dbCharset", $dbUser, $dbPassword);
+        $hostInfo = $wpdb->parse_db_host($dbHost);
+        list($host, $port, $socket, $is_ipv6) = $hostInfo;
+        $hostData = "host=$host";
+        if ( ! empty($port)) {
+            $hostData .= ";port=$port";
+        }
+        if ( ! empty($socket)) {
+            $hostData .= ";unix_socket=$socket";
+        }
+
+        $this->index = new PDO("mysql:" . $hostData . ";dbname=$dbName;charset=$dbCharset", $dbUser, $dbPassword);
         $this->index->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
         if (!$this->dbh) {

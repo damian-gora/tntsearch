@@ -84,6 +84,7 @@ class TNTSearch
      */
     public function selectIndex($deprecated = '')
     {
+        global $wpdb;
 
         $dbName = DB_NAME;
         $dbUser = DB_USER;
@@ -91,7 +92,17 @@ class TNTSearch
         $dbHost = DB_HOST;
         $dbCharset = DB_CHARSET;
 
-        $this->index = new PDO("mysql:host=$dbHost;dbname=$dbName;charset=$dbCharset", $dbUser, $dbPassword);
+        $hostInfo = $wpdb->parse_db_host($dbHost);
+        list( $host, $port, $socket, $is_ipv6 ) = $hostInfo;
+        $hostData = "host=$host";
+        if(!empty($port)){
+            $hostData .= ";port=$port";
+        }
+        if(!empty($socket)){
+            $hostData .= ";unix_socket=$socket";
+        }
+
+        $this->index = new PDO("mysql:" . $hostData . ";dbname=$dbName;charset=$dbCharset", $dbUser, $dbPassword);
         $this->index->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $this->setStemmer();
     }
