@@ -28,7 +28,7 @@ class Connector
      */
     public function getOptions(array $config)
     {
-        return $this->options;
+        return !empty($config['options']) ? $config['options'] : $this->options;
     }
 
     /**
