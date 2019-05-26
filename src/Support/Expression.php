@@ -42,11 +42,17 @@ class Expression
 
     public function isOperand($str)
     {
-
+        // Currently, the boolean search feature should only support AND
+        /*
         if (
             ($str == "|") || ($str == "&") || ($str == "~") ||
             ($str == "(") || ($str == ")")
         ) {
+            return false;
+        }
+        */
+
+        if ($str == "&") {
             return false;
         }
 
@@ -86,8 +92,12 @@ class Expression
 
     public function lex($string)
     {
-        $bad  = [' or ', '-', ' ', '@', '.'];
-        $good = [ '|'  , '~', '&', '&', '&'];
+        // Currently, the boolean search feature should only support AND
+        // $bad  = [' or ', '-', ' ', '@', '.'];
+        // $good = [ '|'  , '~', '&', '&', '&'];
+
+        $bad  = [' '];
+        $good = ['&'];
 
         $string = str_replace($bad, $good, $string);
         $string = mb_strtolower($string);
