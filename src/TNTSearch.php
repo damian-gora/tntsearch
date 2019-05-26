@@ -168,9 +168,7 @@ class TNTSearch
 
         $expression = new Expression;
 
-        // Currently, the boolean search feature should only support AND
-        //$postfix    = $expression->toPostfix("|" . $phrase);
-        $postfix    = $expression->toPostfix($phrase);
+        $postfix    = $expression->toPostfix("|" . $phrase);
 
         foreach ($postfix as $token) {
             if ($token == '&') {
