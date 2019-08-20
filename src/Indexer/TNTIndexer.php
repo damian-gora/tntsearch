@@ -123,7 +123,13 @@ class TNTIndexer
         $this->stemmer = $stemmer;
         $class         = addslashes(get_class($stemmer));
 
-        $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'stemmer', '$class')");
+        $query = "SELECT * FROM $wpdb->dgwt_wcas_si_info WHERE ikey = 'stemmer'";
+        $stemmer  = $this->index->query($query);
+        $stemmerVal = $stemmer->fetch(PDO::FETCH_ASSOC)['ivalue'];
+
+        if(empty($stemmerVal)) {
+            $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'stemmer', '$class')");
+        }
     }
 
     public function setCroatianStemmer()
@@ -174,7 +180,6 @@ class TNTIndexer
     {
         $this->indexName = $deprecated;
 
-        Database::create();
         $pdo         = new MySqlConnector();
         $this->index = $pdo->connect(Database::getConfig());
 
@@ -240,6 +245,10 @@ class TNTIndexer
 
     public function run()
     {
+
+        //Buildier::log( "[Searchable index] Memory usage: " . memory_get_usage(), false);
+        $productProcessed = Buildier::getInfo('searchable_processed');
+
         if ($this->config['driver'] == "filesystem") {
             return $this->readDocumentsFromFileSystem();
         }
@@ -248,27 +257,27 @@ class TNTIndexer
 
         $result = $this->dbh->query($this->query);
 
-        $counter = 0;
+        $counter = !empty($productProcessed) && is_numeric($productProcessed) ? intval($productProcessed) : 0;
+
         $this->index->beginTransaction();
+
+
         while ($row = $result->fetch(PDO::FETCH_ASSOC)) {
             $counter++;
 
             $this->processDocument(new Collection($row));
 
-            if ($counter % $this->steps == 0) {
-
-                $this->index->commit();
-
-                $ntime = number_format(microtime(true) - $time, 4, '.', '') . ' s';
-                Buildier::log( "[Searchable index] Processed $counter products in $ntime", $error = false);
-                Buildier::addInfo('searchable_processed', $counter);
-                $time = microtime(true);
-
-                $this->index->beginTransaction();
-
-            }
-
         }
+
+        if (Buildier::getInfo('status') !== 'building') {
+            $this->index->rollBack();
+            Buildier::log("[Searchable index] Process killed", false);
+            exit();
+        }
+
+        $ntime = number_format(microtime(true) - $time, 4, '.', '') . ' s';
+        Buildier::log("[Searchable index] Processed $counter products in $ntime", false);
+
         $this->index->commit();
 
 
@@ -516,7 +525,7 @@ class TNTIndexer
                 $stmt->execute();
             } catch (\Exception $e) {
                 //we have a duplicate
-                echo $e->getMessage();
+                Buildier::log( "[Searchable index] DB: Duplicate " . serialize($term) . ' | ' .  $e->getMessage(), false);
             }
         }
     }
@@ -633,7 +642,7 @@ class TNTIndexer
         $query = "SELECT * FROM $wpdb->dgwt_wcas_si_info WHERE ikey = 'total_documents'";
         $docs  = $this->index->query($query);
 
-        return $docs->fetch(PDO::FETCH_ASSOC)['value'];
+        return $docs->fetch(PDO::FETCH_ASSOC)['ivalue'];
     }
 
     /**

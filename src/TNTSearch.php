@@ -201,11 +201,13 @@ class TNTSearch
                     $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true, $isLastKeyword)
                                           ->pluck('doc_id');
                 }
+
                 if (is_string($right)) {
                     $isLastKeyword = $right == $lastKeyword;
                     $right         = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true, $isLastKeyword)
                                           ->pluck('doc_id');
                 }
+
                 if (is_null($left)) {
                     $left = [];
                 }
@@ -258,7 +260,9 @@ class TNTSearch
      */
     public function getAllDocumentsForKeyword($keyword, $noLimit = false, $isLastKeyword = false)
     {
+
         $word = $this->getWordlistByKeyword($keyword, $isLastKeyword);
+
         if ( ! isset($word[0])) {
             return new Collection([]);
         }
@@ -324,10 +328,10 @@ class TNTSearch
         $searchWordlist = "SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword LIMIT 1";
         $stmtWord       = $this->index->prepare($searchWordlist);
 
-        if ($this->asYouType && $isLastWord) {
-            $searchWordlist = "SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword ORDER BY length(term) ASC, num_hits DESC LIMIT 1";
+        if ($this->asYouType) {
+            $searchWordlist = "SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword ORDER BY length(term) ASC, num_hits DESC LIMIT 100";
             $stmtWord       = $this->index->prepare($searchWordlist);
-            $stmtWord->bindValue(':keyword', mb_strtolower($keyword) . "%");
+            $stmtWord->bindValue(':keyword', "%" . mb_strtolower($keyword) . "%");
         } else {
             $stmtWord->bindValue(':keyword', mb_strtolower($keyword));
         }
