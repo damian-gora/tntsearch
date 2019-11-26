@@ -26,6 +26,8 @@ class TNTSearch
     public $fuzzy_prefix_length = 2;
     public $fuzzy_max_expansions = 50;
     public $fuzzy_distance = 2;
+    protected $lang = '';
+    protected $postType = '';
     protected $dbh = null;
 
     /**
@@ -50,6 +52,38 @@ class TNTSearch
     public function setDatabaseHandle(PDO $dbh)
     {
         $this->dbh = $dbh;
+    }
+
+    /**
+     * Set lang
+     *
+     * @param string $lang
+     */
+    public function setLang($lang)
+    {
+        if (
+            ! empty($lang)
+            && is_string($lang)
+            && preg_match('/^[a-z]{2}$/', $lang)
+        ) {
+            $this->lang = $lang;
+        }
+    }
+
+    /**
+     * Set post type
+     *
+     * @param string $postType
+     */
+    public function setPostType($postType)
+    {
+        if (
+            ! empty($postType)
+            && is_string($postType)
+            && preg_match('/^[a-z_\-]{1,50}$/', $postType)
+        ) {
+            $this->postType = $postType;
+        }
     }
 
     /**
@@ -81,11 +115,9 @@ class TNTSearch
     }
 
     /**
-     * @param string $indexName
-     *
      * @throws IndexNotFoundException
      */
-    public function selectIndex($deprecated = '')
+    public function selectIndex()
     {
         $pdo         = new MySqlConnector();
         $this->index = $pdo->connect(Database::getConfig());
@@ -160,6 +192,7 @@ class TNTSearch
      */
     public function searchBoolean($phrase, $numOfResults = 100)
     {
+
         $keywords    = $this->breakIntoTokens($phrase);
         $lastKeyword = end($keywords);
 
@@ -168,8 +201,8 @@ class TNTSearch
 
         $expression = new Expression;
 
-        $postfix    = $expression->toPostfix("|" . $phrase);
-
+        $postfix = !empty($keywords) ? $expression->toPostfix("|" . implode(' ', $keywords)) : array();
+        
         foreach ($postfix as $token) {
             if ($token == '&') {
                 $left  = array_pop($stack);
@@ -192,7 +225,7 @@ class TNTSearch
                     $right = [];
                 }
                 $stack[] = array_values(array_intersect($left, $right));
-            } else if ($token == '|') {
+            } elseif ($token == '|') {
                 $left  = array_pop($stack);
                 $right = array_pop($stack);
 
@@ -201,11 +234,13 @@ class TNTSearch
                     $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true, $isLastKeyword)
                                           ->pluck('doc_id');
                 }
+
                 if (is_string($right)) {
                     $isLastKeyword = $right == $lastKeyword;
                     $right         = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true, $isLastKeyword)
                                           ->pluck('doc_id');
                 }
+
                 if (is_null($left)) {
                     $left = [];
                 }
@@ -214,7 +249,7 @@ class TNTSearch
                     $right = [];
                 }
                 $stack[] = array_unique(array_merge($left, $right));
-            } else if ($token == '~') {
+            } elseif ($token == '~') {
                 $left = array_pop($stack);
                 if (is_string($left)) {
                     $left = $this->getAllDocumentsForWhereKeywordNot($this->stemmer->stem($left), true)
@@ -258,7 +293,9 @@ class TNTSearch
      */
     public function getAllDocumentsForKeyword($keyword, $noLimit = false, $isLastKeyword = false)
     {
+
         $word = $this->getWordlistByKeyword($keyword, $isLastKeyword);
+
         if ( ! isset($word[0])) {
             return new Collection([]);
         }
@@ -277,15 +314,15 @@ class TNTSearch
      */
     public function getAllDocumentsForWhereKeywordNot($keyword, $noLimit = false)
     {
-        global $wpdb;
+        $doclistTable = $this->getTableName('doclist');
 
         $word = $this->getWordlistByKeyword($keyword);
         if ( ! isset($word[0])) {
             return new Collection([]);
         }
-        $query = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE doc_id NOT IN (SELECT doc_id FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
+        $query = "SELECT * FROM $doclistTable WHERE doc_id NOT IN (SELECT doc_id FROM $doclistTable WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
         if ($noLimit) {
-            $query = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE doc_id NOT IN (SELECT doc_id FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC";
+            $query = "SELECT * FROM $doclistTable WHERE doc_id NOT IN (SELECT doc_id FROM $doclistTable WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC";
         }
         $stmtDoc = $this->index->prepare($query);
 
@@ -319,15 +356,16 @@ class TNTSearch
      */
     public function getWordlistByKeyword($keyword, $isLastWord = false)
     {
-        global $wpdb;
 
-        $searchWordlist = "SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword LIMIT 1";
+        $wordlistTable = $this->getTableName('wordlist');
+
+        $searchWordlist = "SELECT * FROM $wordlistTable WHERE term like :keyword LIMIT 1";
         $stmtWord       = $this->index->prepare($searchWordlist);
 
-        if ($this->asYouType && $isLastWord) {
-            $searchWordlist = "SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword ORDER BY length(term) ASC, num_hits DESC LIMIT 1";
+        if ($this->asYouType) {
+            $searchWordlist = "SELECT * FROM $wordlistTable WHERE term like :keyword ORDER BY length(term) ASC, num_hits DESC LIMIT 100";
             $stmtWord       = $this->index->prepare($searchWordlist);
-            $stmtWord->bindValue(':keyword', mb_strtolower($keyword) . "%");
+            $stmtWord->bindValue(':keyword', "%" . mb_strtolower($keyword) . "%");
         } else {
             $stmtWord->bindValue(':keyword', mb_strtolower($keyword));
         }
@@ -348,10 +386,11 @@ class TNTSearch
      */
     public function fuzzySearch($keyword)
     {
-        global $wpdb;
+
+        $wordlistTable = $this->getTableName('wordlist');
 
         $prefix         = substr($keyword, 0, $this->fuzzy_prefix_length);
-        $searchWordlist = "SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword ORDER BY num_hits DESC LIMIT {$this->fuzzy_max_expansions}";
+        $searchWordlist = "SELECT * FROM $wordlistTable WHERE term like :keyword ORDER BY num_hits DESC LIMIT {$this->fuzzy_max_expansions}";
         $stmtWord       = $this->index->prepare($searchWordlist);
         $stmtWord->bindValue(':keyword', mb_strtolower($prefix) . "%");
         $stmtWord->execute();
@@ -408,9 +447,9 @@ class TNTSearch
 
     public function getValueFromInfoTable($value)
     {
-        global $wpdb;
+        $infoTable = $this->getTableName('info');
 
-        $query = "SELECT * FROM $wpdb->dgwt_wcas_si_info WHERE ikey = '$value'";
+        $query = "SELECT * FROM $infoTable WHERE ikey = '$value'";
         $docs  = $this->index->query($query);
 
         return $docs->fetch(PDO::FETCH_ASSOC)['ivalue'];
@@ -481,10 +520,11 @@ class TNTSearch
      */
     private function getAllDocumentsForFuzzyKeyword($words, $noLimit)
     {
-        global $wpdb;
+
+        $doclistTable = $this->getTableName('doclist');
 
         $binding_params = implode(',', array_fill(0, count($words), '?'));
-        $query          = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id in ($binding_params) ORDER BY CASE term_id";
+        $query          = "SELECT * FROM $doclistTable WHERE term_id in ($binding_params) ORDER BY CASE term_id";
         $order_counter  = 1;
 
         foreach ($words as $word) {
@@ -517,11 +557,12 @@ class TNTSearch
      */
     private function getAllDocumentsForStrictKeyword($word, $noLimit)
     {
-        global $wpdb;
 
-        $query = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id = :id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
+        $doclistTable = $this->getTableName('doclist');
+
+        $query = "SELECT * FROM $doclistTable WHERE term_id = :id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
         if ($noLimit) {
-            $query = "SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE term_id = :id ORDER BY hit_count DESC";
+            $query = "SELECT * FROM $doclistTable WHERE term_id = :id ORDER BY hit_count DESC";
         }
         $stmtDoc = $this->index->prepare($query);
 
@@ -529,5 +570,52 @@ class TNTSearch
         $stmtDoc->execute();
 
         return new Collection($stmtDoc->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * Get MySQL table name
+     *
+     * @return sting table type
+     */
+    private function getTableName($type)
+    {
+        global $wpdb;
+        $tableName = '';
+
+        $suffix = $this->getTableSuffix();
+
+        switch ($type) {
+            case 'wordlist':
+                $tableName = $wpdb->dgwt_wcas_si_wordlist . $suffix;
+                break;
+            case 'doclist':
+                $tableName = $wpdb->dgwt_wcas_si_doclist . $suffix;
+                break;
+            case 'info':
+                $tableName = $wpdb->dgwt_wcas_si_info;
+                break;
+        }
+
+        return $tableName;
+    }
+
+    /**
+     * Get table suffix
+     *
+     * @return string
+     */
+    public function getTableSuffix()
+    {
+        $suffix = '';
+
+        if ( ! empty($this->postType) && $this->postType !== 'product') {
+            $suffix .= '_' . $this->postType;
+        }
+
+        if ( ! empty($this->lang)) {
+            $suffix .= '_' . $this->lang;
+        }
+
+        return $suffix;
     }
 }

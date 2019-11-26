@@ -18,7 +18,10 @@ use TeamTNT\TNTSearchASFW\Support\Collection;
 use TeamTNT\TNTSearchASFW\Support\Tokenizer;
 use TeamTNT\TNTSearchASFW\Support\TokenizerInterface;
 use DgoraWcas\Engines\TNTSearchMySQL\Indexer\Searchable\Database;
-use DgoraWcas\Engines\TNTSearchMySQL\Indexer\Buildier;
+use DgoraWcas\Engines\TNTSearchMySQL\Indexer\Builder;
+use DgoraWcas\Engines\TNTSearchMySQL\Indexer\Utils;
+use DgoraWcas\Multilingual;
+use DgoraWcas\Product;
 
 class TNTIndexer
 {
@@ -40,6 +43,10 @@ class TNTIndexer
     public $steps                 = 1000;
     public $indexName             = "";
     public $statementsPrepared    = false;
+    public $statementsLang        = "";
+    public $statementsPostType    = "";
+    public $bufforLang            = "";
+    public $bufforPostType        = "";
 
     public function __construct()
     {
@@ -123,7 +130,13 @@ class TNTIndexer
         $this->stemmer = $stemmer;
         $class         = addslashes(get_class($stemmer));
 
-        $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'stemmer', '$class')");
+        $query = "SELECT * FROM $wpdb->dgwt_wcas_si_info WHERE ikey = 'stemmer'";
+        $stemmer  = $this->index->query($query);
+        $stemmerVal = $stemmer->fetch(PDO::FETCH_ASSOC)['ivalue'];
+
+        if(empty($stemmerVal)) {
+            $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'stemmer', '$class')");
+        }
     }
 
     public function setCroatianStemmer()
@@ -155,13 +168,19 @@ class TNTIndexer
 
     public function prepareStatementsForIndex()
     {
-        global $wpdb;
+        if (
+            !$this->statementsPrepared
+            || $this->statementsLang !== $this->bufforLang
+            || $this->statementsPostType !== $this->bufforPostType
+         ) {
+            $wordlistTable = $this->getTableName('wordlist');
 
-        if (!$this->statementsPrepared) {
-            $this->insertWordlistStmt = $this->index->prepare("INSERT INTO $wpdb->dgwt_wcas_si_wordlist (term, num_hits, num_docs) VALUES (:keyword, :hits, :docs)");
-            $this->selectWordlistStmt = $this->index->prepare("SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword LIMIT 1");
-            $this->updateWordlistStmt = $this->index->prepare("UPDATE $wpdb->dgwt_wcas_si_wordlist SET num_docs = num_docs + :docs, num_hits = num_hits + :hits WHERE term = :keyword");
+            $this->insertWordlistStmt = $this->index->prepare("INSERT INTO $wordlistTable (term, num_hits, num_docs) VALUES (:keyword, :hits, :docs)");
+            $this->selectWordlistStmt = $this->index->prepare("SELECT * FROM $wordlistTable WHERE term like :keyword LIMIT 1");
+            $this->updateWordlistStmt = $this->index->prepare("UPDATE $wordlistTable SET num_docs = num_docs + :docs, num_hits = num_hits + :hits WHERE term = :keyword");
             $this->statementsPrepared = true;
+            $this->statementsLang = $this->bufforLang;
+            $this->statementsPostType = $this->bufforPostType;
         }
     }
 
@@ -174,7 +193,6 @@ class TNTIndexer
     {
         $this->indexName = $deprecated;
 
-        Database::create();
         $pdo         = new MySqlConnector();
         $this->index = $pdo->connect(Database::getConfig());
 
@@ -240,104 +258,73 @@ class TNTIndexer
 
     public function run()
     {
-        if ($this->config['driver'] == "filesystem") {
-            return $this->readDocumentsFromFileSystem();
-        }
+
+        $isMultilingual = Multilingual::isMultilingual();
+
+        //Builder::log( "[Searchable index] Memory usage: " . memory_get_usage(), false);
+        $productProcessed = Builder::getInfo('searchable_processed');
 
         $time = microtime(true);
 
         $result = $this->dbh->query($this->query);
 
-        $counter = 0;
+        $counter = !empty($productProcessed) && is_numeric($productProcessed) ? intval($productProcessed) : 0;
+
         $this->index->beginTransaction();
+
         while ($row = $result->fetch(PDO::FETCH_ASSOC)) {
             $counter++;
 
-            $this->processDocument(new Collection($row));
-
-            if ($counter % $this->steps == 0) {
-
-                $this->index->commit();
-
-                $ntime = number_format(microtime(true) - $time, 4, '.', '') . ' s';
-                Buildier::log( "[Searchable index] Processed $counter products in $ntime", $error = false);
-                Buildier::addInfo('searchable_processed', $counter);
-                $time = microtime(true);
-
-                $this->index->beginTransaction();
-
+            if(!empty($row['lang'])){
+                $this->bufforLang = $row['lang'];
+                unset($row['lang']);
             }
 
+            if(!empty($row['post_type'])){
+                $this->bufforPostType = $row['post_type'];
+                unset($row['post_type']);
+            }
+
+            if($isMultilingual && empty($this->bufforLang)) {
+                continue;
+            }
+
+            // Custom attributes values
+            if(!empty($this->config['scope']['attributes'])){
+               $customAttributesValues = Product::getCustomAttributes((int)$row['ID']);
+               if(!empty($customAttributesValues)){
+                   $sep = ' | ';
+                   if(!isset($row['attributes'])){
+                       $row['attributes'] = '';
+                       $sep = '';
+                   }
+
+                   $row['attributes'] .=  $sep . implode(' | ', $customAttributesValues);
+               }
+            }
+
+            $this->processDocument(new Collection($row));
+
+            $this->bufforLang = '';
+            $this->bufforPostType = '';
         }
+
+        if (Builder::getInfo('status') !== 'building') {
+            $this->index->rollBack();
+            Builder::log("[Searchable index] Process killed", false);
+            exit();
+        }
+
+        $ntime = number_format(microtime(true) - $time, 4, '.', '') . ' s';
+        Builder::log("[Searchable index] Processed $counter products in $ntime", false);
+
         $this->index->commit();
 
 
         $this->updateInfoTable('total_documents', $counter);
-        Buildier::addInfo('searchable_processed', $counter);
+        Builder::addInfo('searchable_processed', $counter);
 
         $this->info("Total rows $counter");
-    }
-
-    public function readDocumentsFromFileSystem()
-    {
-        global $wpdb;
-
-        $exclude = [];
-        if (isset($this->config['exclude'])) {
-            $exclude = $this->config['exclude'];
-        }
-
-        $this->index->exec("CREATE TABLE IF NOT EXISTS filemap (
-                    id INTEGER PRIMARY KEY,
-                    path TEXT)");
-        $path = realpath($this->config['location']);
-
-        $objects = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path), RecursiveIteratorIterator::SELF_FIRST);
-        $this->index->beginTransaction();
-        $counter = 0;
-
-        foreach ($objects as $name => $object) {
-            $name = str_replace($path.'/', '', $name);
-
-            if (is_callable($this->config['extension'])) {
-                $includeFile = $this->config['extension']($object);
-            } elseif (is_array($this->config['extension'])) {
-                $includeFile = in_array($object->getExtension(), $this->config['extension']);
-            } else {
-                $includeFile = stringEndsWith($name, $this->config['extension']);
-            }
-
-            if ($includeFile && !in_array($name, $exclude)) {
-                $counter++;
-                $file = [
-                    'id'      => $counter,
-                    'name'    => $name,
-                    'content' => $this->filereader->read($object)
-                ];
-                $fileCollection = new Collection($file);
-
-                if (is_callable($this->filereader->fileFilterCallback)) {
-                    $fileCollection = $fileCollection->filter($this->filereader->fileFilterCallback);
-                }
-                if (is_callable($this->filereader->fileMapCallback)) {
-                    $fileCollection = $fileCollection->map($this->filereader->fileMapCallback);
-                }
-
-                $this->processDocument($fileCollection);
-                $statement = $this->index->prepare("INSERT INTO filemap ( 'id', 'path') values ( $counter, :object)");
-                $statement->bindParam(':object', $object);
-                $statement->execute();
-                $this->info("Processed $counter $object");
-            }
-        }
-
-        $this->index->commit();
-
-        $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'total_documents', $counter)");
-        $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'driver', 'filesystem')");
-
-        $this->info("Total rows $counter");
-        $this->info("Index created: {$this->config['storage']}");
     }
 
     public function processDocument($row)
@@ -355,28 +342,35 @@ class TNTIndexer
         $this->saveToIndex($stems, $documentId);
     }
 
-    public function insert($document)
+    public function insert($document, $lang = '', $postType = '')
     {
-        $this->processDocument(new Collection($document));
+        $this->setBuffor($lang, $postType);
+
+        $this->processDocument(new Collection($document), $lang);
         $total = $this->totalDocumentsInCollection() + 1;
         $this->updateInfoTable('total_documents', $total);
     }
 
-    public function update($id, $document)
+    public function update($id, $document, $lang = '', $postType = '')
     {
+        $this->setBuffor($lang, $postType);
+
         $this->delete($id);
-        $this->insert($document);
+        $this->insert($document, $lang, $postType);
     }
 
-    public function delete($documentId)
+    public function delete($documentId, $lang = '', $postType = '')
     {
-        global $wpdb;
+        $this->setBuffor($lang, $postType);
 
-        $rows = $this->prepareAndExecuteStatement("SELECT * FROM $wpdb->dgwt_wcas_si_doclist WHERE doc_id = :documentId;", [
+        $wordlistTable = $this->getTableName('wordlist');
+        $doclistTable  = $this->getTableName('doclist');
+
+        $rows = $this->prepareAndExecuteStatement("SELECT * FROM $doclistTable WHERE doc_id = :documentId;", [
             ['key' => ':documentId', 'value' => $documentId]
         ])->fetchAll(PDO::FETCH_ASSOC);
 
-        $updateStmt = $this->index->prepare("UPDATE $wpdb->dgwt_wcas_si_wordlist SET num_docs = num_docs - 1, num_hits = num_hits - :hits WHERE id = :term_id");
+        $updateStmt = $this->index->prepare("UPDATE $wordlistTable SET num_docs = num_docs - 1, num_hits = num_hits - :hits WHERE id = :term_id");
 
         foreach ($rows as $document) {
             $updateStmt->bindParam(":hits", $document['hit_count']);
@@ -384,11 +378,11 @@ class TNTIndexer
             $updateStmt->execute();
         }
 
-        $this->prepareAndExecuteStatement("DELETE FROM $wpdb->dgwt_wcas_si_doclist WHERE doc_id = :documentId;", [
+        $this->prepareAndExecuteStatement("DELETE FROM $doclistTable WHERE doc_id = :documentId;", [
             ['key' => ':documentId', 'value' => $documentId]
         ]);
 
-        $res = $this->prepareAndExecuteStatement("DELETE FROM $wpdb->dgwt_wcas_si_wordlist WHERE num_hits = 0");
+        $res = $this->prepareAndExecuteStatement("DELETE FROM $wordlistTable WHERE num_hits = 0");
 
         $affected = $res->rowCount();
 
@@ -408,12 +402,27 @@ class TNTIndexer
     public function stemText($text)
     {
         $stemmer = $this->getStemmer();
+        $text    = $this->clearText($text);
         $words   = $this->breakIntoTokens($text);
         $stems   = [];
         foreach ($words as $word) {
-            $stems[] = $stemmer->stem($word);
+            if(!empty($word)){
+                $stems[] = $stemmer->stem($word);
+            }
         }
         return $stems;
+    }
+
+    /**
+     * Clear text rom HTML, comments etc.
+     *
+     * @param string $text
+     *
+     * @return string
+     */
+    public function clearText($text)
+    {
+        return Utils::clearContent($text);
     }
 
     public function breakIntoTokens($text)
@@ -421,6 +430,7 @@ class TNTIndexer
         if ($this->decodeHTMLEntities) {
             $text = html_entity_decode($text);
         }
+
         return $this->tokenizer->tokenize($text, $this->stopWords);
     }
 
@@ -431,14 +441,16 @@ class TNTIndexer
 
     public function saveToIndex($stems, $docId)
     {
+
         $this->prepareStatementsForIndex();
         $terms = $this->saveWordlist($stems);
         $this->saveDoclist($terms, $docId);
-        $this->saveHitList($stems, $docId, $terms);
+        //$this->saveHitList($stems, $docId, $terms); weights
     }
 
     /**
      * @param $stems
+     * @param stting lang
      *
      * @return array
      */
@@ -503,9 +515,9 @@ class TNTIndexer
 
     public function saveDoclist($terms, $docId)
     {
-        global $wpdb;
+        $doclistTable = $this->getTableName('doclist');
 
-        $insert = "INSERT INTO $wpdb->dgwt_wcas_si_doclist (term_id, doc_id, hit_count) VALUES (:id, :doc, :hits)";
+        $insert = "INSERT INTO $doclistTable (term_id, doc_id, hit_count) VALUES (:id, :doc, :hits)";
         $stmt   = $this->index->prepare($insert);
 
         foreach ($terms as $key => $term) {
@@ -516,7 +528,7 @@ class TNTIndexer
                 $stmt->execute();
             } catch (\Exception $e) {
                 //we have a duplicate
-                echo $e->getMessage();
+                Builder::log( "[Searchable index] DB: Duplicate " . serialize($term) . ' | ' .  $e->getMessage(), false);
             }
         }
     }
@@ -552,77 +564,6 @@ class TNTIndexer
         }
     }
 
-    public function getWordFromWordList($word)
-    {
-        global $wpdb;
-
-        $selectStmt = $this->index->prepare("SELECT * FROM $wpdb->dgwt_wcas_si_wordlist WHERE term like :keyword LIMIT 1");
-        $selectStmt->bindValue(':keyword', $word);
-        $selectStmt->execute();
-        return $selectStmt->fetch(PDO::FETCH_ASSOC);
-    }
-
-    /**
-     * @param $word
-     *
-     * @return int
-     */
-    public function countWordInWordList($word)
-    {
-        $res = $this->getWordFromWordList($word);
-
-        if ($res) {
-            return $res['num_hits'];
-        }
-        return 0;
-    }
-
-    /**
-     * @param $word
-     *
-     * @return int
-     */
-    public function countDocHitsInWordList($word)
-    {
-        $res = $this->getWordFromWordList($word);
-
-        if ($res) {
-            return $res['num_docs'];
-        }
-        return 0;
-    }
-
-    public function buildDictionary($filename, $count = -1, $hits = true, $docs = false)
-    {
-        global $wpdb;
-
-        $selectStmt = $this->index->prepare("SELECT * FROM $wpdb->dgwt_wcas_si_wordlist ORDER BY num_hits DESC;");
-        $selectStmt->execute();
-
-        $dictionary = "";
-        $counter    = 0;
-
-        while ($row = $selectStmt->fetch(PDO::FETCH_ASSOC)) {
-            $dictionary .= $row['term'];
-            if ($hits) {
-                $dictionary .= "\t".$row['num_hits'];
-            }
-
-            if ($docs) {
-                $dictionary .= "\t".$row['num_docs'];
-            }
-
-            $counter++;
-            if ($counter >= $count && $count > 0) {
-                break;
-            }
-
-            $dictionary .= "\n";
-        }
-
-        file_put_contents($filename, $dictionary, LOCK_EX);
-    }
-
     /**
      * @return int
      */
@@ -633,7 +574,68 @@ class TNTIndexer
         $query = "SELECT * FROM $wpdb->dgwt_wcas_si_info WHERE ikey = 'total_documents'";
         $docs  = $this->index->query($query);
 
-        return $docs->fetch(PDO::FETCH_ASSOC)['value'];
+        return $docs->fetch(PDO::FETCH_ASSOC)['ivalue'];
+    }
+
+    /**
+     * Get doclist table name
+     * @param string $type
+     *
+     * @return string
+     */
+    public function getTableName($type){
+
+        global $wpdb;
+
+        $name = '';
+        $suffix = $this->getTableSuffix();
+
+        switch ($type){
+            case 'wordlist':
+                $name = $wpdb->dgwt_wcas_si_wordlist . $suffix;
+                break;
+            case 'doclist':
+                $name = $wpdb->dgwt_wcas_si_doclist . $suffix;
+                break;
+            case 'info':
+                $name = $wpdb->dgwt_wcas_si_info;
+                break;
+        }
+
+        return $name;
+    }
+
+    /**
+     * Get table suffix
+     *
+     * @return string
+     */
+    public function getTableSuffix()
+    {
+        $suffix = '';
+
+        if (! empty($this->bufforPostType) && $this->bufforPostType !== 'product') {
+            $suffix .= '_' . $this->bufforPostType;
+        }
+
+        if (! empty($this->bufforLang)) {
+            $suffix .= '_' . $this->bufforLang;
+        }
+
+        return $suffix;
+    }
+
+    /**
+     * Set languages and post type buffor
+     *
+     * @param string $lang
+     * @param string $postType
+     *
+     * @return void
+     */
+    public function setBuffor($lang = '', $postType = ''){
+        $this->bufforLang     = ! empty($lang) ? $lang : $this->bufforLang;
+        $this->bufforPostType = ! empty($postType) && $postType !== 'product' ? $postType : $this->bufforPostType;
     }
 
     /**
@@ -668,4 +670,5 @@ class TNTIndexer
             echo $text.PHP_EOL;
         }
     }
+
 }
