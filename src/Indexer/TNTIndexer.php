@@ -74,19 +74,10 @@ class TNTIndexer
     public function loadConfig(array $config)
     {
         $this->config            = $config;
-        $this->config['storage'] = rtrim($this->config['storage'], '/').'/';
         if (!isset($this->config['driver'])) {
             $this->config['driver'] = "";
         }
 
-    }
-
-    /**
-     * @return string
-     */
-    public function getStoragePath()
-    {
-        return $this->config['storage'];
     }
 
     public function getStemmer()
@@ -136,6 +127,13 @@ class TNTIndexer
 
         if(empty($stemmerVal)) {
             $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'stemmer', '$class')");
+        }else{
+
+            // Backward compatibility
+            if($stemmerVal === 'TeamTNT\TNTSearch\Stemmer\NoStemmer'){
+                $fixedClass = 'TeamTNT\TNTSearchASFW\Stemmer\NoStemmer';
+                $this->index->exec("UPDATE $wpdb->dgwt_wcas_si_info SET ivalue='$fixedClass' WHERE ivalue='$stemmerVal' ");
+            }
         }
     }
 
@@ -149,7 +147,7 @@ class TNTIndexer
      */
     public function setLanguage($language = 'porter')
     {
-        $class = 'TeamTNT\\TNTSearch\\Stemmer\\'.ucfirst(strtolower($language)).'Stemmer';
+        $class = 'TeamTNT\\TNTSearchASFW\\Stemmer\\'.ucfirst(strtolower($language)).'Stemmer';
         $this->setStemmer(new $class);
     }
 
@@ -406,7 +404,7 @@ class TNTIndexer
         $words   = $this->breakIntoTokens($text);
         $stems   = [];
         foreach ($words as $word) {
-            if(!empty($word)){
+            if($word !== ''){
                 $stems[] = $stemmer->stem($word);
             }
         }

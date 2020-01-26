@@ -13,6 +13,7 @@ use TeamTNT\TNTSearchASFW\Support\Tokenizer;
 use TeamTNT\TNTSearchASFW\Support\TokenizerInterface;
 use TeamTNT\TNTSearchASFW\Connectors\MySqlConnector;
 use DgoraWcas\Engines\TNTSearchMySQL\Indexer\Searchable\Database;
+use DgoraWcas\Engines\TNTSearchMySQL\Debug\Debugger;
 
 class TNTSearch
 {
@@ -26,6 +27,7 @@ class TNTSearch
     public $fuzzy_prefix_length = 2;
     public $fuzzy_max_expansions = 50;
     public $fuzzy_distance = 2;
+    public $debug = false;
     protected $lang = '';
     protected $postType = '';
     protected $dbh = null;
@@ -37,8 +39,11 @@ class TNTSearch
      */
     public function loadConfig(array $config)
     {
+        if(!empty($config['debug'])){
+            $this->debug = true;
+        }
+
         $this->config            = $config;
-        $this->config['storage'] = rtrim($this->config['storage'], '/') . '/';
     }
 
     public function __construct()
@@ -173,10 +178,6 @@ class TNTSearch
         })->take($numOfResults);
         $stopTimer = microtime(true);
 
-        if ($this->isFileSystemIndex()) {
-            return $this->filesystemMapIdsToPaths($docs)->toArray();
-        }
-
         return [
             'ids'            => array_keys($docs->toArray()),
             'hits'           => $totalHits,
@@ -201,54 +202,118 @@ class TNTSearch
 
         $expression = new Expression;
 
-        $postfix = !empty($keywords) ? $expression->toPostfix("|" . implode(' ', $keywords)) : array();
-        
+        $postfix = !empty($keywords) ? $expression->toPostfix($this->prepareExpression($keywords)) : array();
+
+        if($this->debug){
+            Debugger::log('<b>Phrase:</b> ' . var_export($phrase, true), 'product-search-flow');
+            Debugger::log('<b>Keywords:</b> <pre>' . var_export($keywords, true) . '</pre>', 'product-search-flow');
+            Debugger::log('<b>Tokens:</b> <pre>' . var_export($postfix, true) . '</pre>', 'product-search-flow');
+        }
+
         foreach ($postfix as $token) {
             if ($token == '&') {
-                $left  = array_pop($stack);
-                $right = array_pop($stack);
+
+                $right  = array_pop($stack);
+                $left = array_pop($stack);
+
+                if($this->debug){
+                    $debugOutput = 'INTERSECT START <br />';
+                }
+
+                if (is_string($right)) {
+                    $rightWord = $right;
+                    $isLastKeyword = $right == $lastKeyword;
+                    $right         = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true, $isLastKeyword)
+                        ->pluck('doc_id');
+
+                    if($this->debug){
+                        $debugOutput .= 'INTERSECT right keyword: ' . $rightWord . ' | total: ' . count($right) . ' | ids: ' . implode(',', $right) . '<br />';
+                    }
+                }
+
                 if (is_string($left)) {
+                    $leftWord = $left;
                     $isLastKeyword = $left == $lastKeyword;
                     $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true, $isLastKeyword)
                                           ->pluck('doc_id');
-                }
-                if (is_string($right)) {
-                    $isLastKeyword = $right == $lastKeyword;
-                    $right         = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true, $isLastKeyword)
-                                          ->pluck('doc_id');
-                }
-                if (is_null($left)) {
-                    $left = [];
+
+                    if($this->debug){
+                        $debugOutput .= 'INTERSECT left keyword: ' . $leftWord . ' | total: ' . count($left) . ' | ids: ' . implode(',', $left) . '<br />';
+                    }
                 }
 
                 if (is_null($right)) {
                     $right = [];
                 }
-                $stack[] = array_values(array_intersect($left, $right));
+
+                if (is_null($left)) {
+                    $left = [];
+                }
+
+                $stack[] = array_values(array_intersect($right, $left));
+
+                if($this->debug){
+
+                    if(is_array($stack) && isset($stack[0])){
+
+                        $debugOutput .= 'INTERSECT ' . ' common: ' . implode(',', array_unique($stack[0])) . '<br />';
+                    }
+
+                    $debugOutput .= 'INTERSECT END<br /><br />';
+                    Debugger::log($debugOutput, 'product-search-flow');
+                }
+
             } elseif ($token == '|') {
-                $left  = array_pop($stack);
-                $right = array_pop($stack);
+                $right  = array_pop($stack);
+                $left = array_pop($stack);
 
-                if (is_string($left)) {
-                    $isLastKeyword = $left == $lastKeyword;
-                    $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true, $isLastKeyword)
-                                          ->pluck('doc_id');
+                if($this->debug){
+                    $debugOutput = 'MERGE START <br />';
                 }
 
                 if (is_string($right)) {
+                    $rightWord = $right;
                     $isLastKeyword = $right == $lastKeyword;
                     $right         = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true, $isLastKeyword)
                                           ->pluck('doc_id');
+
+                    if($this->debug){
+                        $debugOutput .= 'MERGE right keyword: ' . $rightWord . ' | total: ' . count($right) . ' | ids: ' . implode(',', $right) . '<br />';
+                    }
+                }
+
+                if (is_string($left)) {
+                    $leftWord = $left;
+                    $isLastKeyword = $left == $lastKeyword;
+                    $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true, $isLastKeyword)
+                        ->pluck('doc_id');
+
+                    if($this->debug){
+                        $debugOutput .= 'MERGE left keyword: ' . $leftWord . ' | total: ' . count($left) . ' | ids: ' . implode(',', $left) . '<br />';
+                    }
+                }
+
+                if (is_null($right)) {
+                    $right = [];
                 }
 
                 if (is_null($left)) {
                     $left = [];
                 }
 
-                if (is_null($right)) {
-                    $right = [];
+                $stack[] = array_unique(array_merge($right, $left));
+
+                if($this->debug){
+
+                    if(is_array($stack) && isset($stack[0])){
+
+                        $debugOutput .= 'MERGE ' . ' sum: ' . implode(',', $stack[0]) . '<br />';
+                    }
+
+                    $debugOutput .= 'MERGE END<br /><br />';
+                    Debugger::log($debugOutput, 'product-search-flow');
                 }
-                $stack[] = array_unique(array_merge($left, $right));
+
             } elseif ($token == '~') {
                 $left = array_pop($stack);
                 if (is_string($left)) {
@@ -273,15 +338,56 @@ class TNTSearch
 
         $stopTimer = microtime(true);
 
-        if ($this->isFileSystemIndex()) {
-            return $this->filesystemMapIdsToPaths($docs)->toArray();
-        }
 
         return [
             'ids'            => $docs->toArray(),
             'hits'           => $docs->count(),
             'execution_time' => round($stopTimer - $startTimer, 7) * 1000 . " ms"
         ];
+    }
+
+    /**
+     * Prepare search expression for postfix
+     *
+     * @param array $keywords
+     * @return string
+     */
+    public function prepareExpression($keywords){
+
+        if(count($keywords) < 2 || !empty($chars)) {
+            return '|' . implode(' ', $keywords);
+        }
+
+        $chars = method_exists($this->tokenizer, 'getSpecialChars') ? $this->tokenizer->getSpecialChars() : array();
+
+        $and = array();
+        $or = array();
+
+        foreach ($keywords as $keyword){
+            $hasSpecialChar = false;
+            foreach ($chars as $char){
+                if(strpos($keyword, $char) !== false){
+                    $hasSpecialChar = true;
+                    break;
+                }
+            }
+
+            if($hasSpecialChar){
+                $or[] = $keyword;
+            }else{
+                $and[] = $keyword;
+            }
+        }
+
+        $exp = '|';
+        if(!empty($and)){
+            $exp .= implode(' ', $and);
+        }
+        if(!empty($or)){
+            $exp .= '|' . implode('|', $or);
+        }
+
+        return $exp;
     }
 
     /**
@@ -357,17 +463,30 @@ class TNTSearch
     public function getWordlistByKeyword($keyword, $isLastWord = false)
     {
 
+        $keyword = mb_strtolower($keyword);
+        $keywordLike = $keyword;
+        $limit = isset($this->config['wordlistByKeywordLimit']) ? absint($this->config['wordlistByKeywordLimit']) : 5000;
+
         $wordlistTable = $this->getTableName('wordlist');
 
         $searchWordlist = "SELECT * FROM $wordlistTable WHERE term like :keyword LIMIT 1";
         $stmtWord       = $this->index->prepare($searchWordlist);
 
         if ($this->asYouType) {
-            $searchWordlist = "SELECT * FROM $wordlistTable WHERE term like :keyword ORDER BY length(term) ASC, num_hits DESC LIMIT 100";
+
+            $keywordLike = "%" . $keyword . "%";
+
+            if(strlen($keyword) <= 2){
+                $keywordLike = $keyword . "%";
+            }
+
+            $searchWordlist = "SELECT * FROM $wordlistTable WHERE term like :keyword ORDER BY length(term) ASC, num_hits DESC LIMIT $limit";
             $stmtWord       = $this->index->prepare($searchWordlist);
-            $stmtWord->bindValue(':keyword', "%" . mb_strtolower($keyword) . "%");
+            $stmtWord->bindValue(':keyword', $keywordLike);
+
+
         } else {
-            $stmtWord->bindValue(':keyword', mb_strtolower($keyword));
+            $stmtWord->bindValue(':keyword', $keywordLike);
         }
         $stmtWord->execute();
         $res = $stmtWord->fetchAll(PDO::FETCH_ASSOC);
@@ -431,18 +550,16 @@ class TNTSearch
     {
         $stemmer = $this->getValueFromInfoTable('stemmer');
         if ($stemmer) {
+
+            // Backward compatibility
+            if ($stemmer === 'TeamTNT\TNTSearch\Stemmer\NoStemmer') {
+                $stemmer = 'TeamTNT\TNTSearchASFW\Stemmer\NoStemmer';
+            }
+
             $this->stemmer = new $stemmer;
         } else {
             $this->stemmer = isset($this->config['stemmer']) ? new $this->config['stemmer'] : new PorterStemmer;
         }
-    }
-
-    /**
-     * @return bool
-     */
-    public function isFileSystemIndex()
-    {
-        return $this->getValueFromInfoTable('driver') == 'filesystem';
     }
 
     public function getValueFromInfoTable($value)

@@ -97,7 +97,7 @@ class Expression
         // $good = [ '|'  , '~', '&', '&', '&'];
 
         $bad  = [' '];
-        $good = ['&'];
+        $good = ['&', '|'];
 
         $string = str_replace($bad, $good, $string);
         $string = mb_strtolower($string);
@@ -107,7 +107,8 @@ class Expression
         foreach (str_split($string) as $char) {
 
             if ($this->isOperator($char)) {
-                if ($token) {
+
+                if ($token !== "") {
                     $tokens[] = $token;
                 }
 
@@ -117,7 +118,7 @@ class Expression
                 $token .= $char;
             }
         }
-        if ($token) {
+        if ($token !== "") {
             $tokens[] = $token;
         }
 

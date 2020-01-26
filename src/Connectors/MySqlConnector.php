@@ -36,7 +36,7 @@ class MySqlConnector extends Connector implements ConnectorInterface
         // Next we will set the "names" and "collation" on the clients connections so
         // a correct character set will be used by this client. The collation also
         // is set on the server but needs to be set here on this client objects.
-        if (isset($config['charset'])) {
+        if (!empty($config['charset'])) {
             $charset = $config['charset'];
 
             $names = "set names '{$charset}'".
@@ -47,7 +47,7 @@ class MySqlConnector extends Connector implements ConnectorInterface
         // Next, we will check to see if a timezone has been specified in this config
         // and if it has we will issue a statement to modify the timezone with the
         // database. Setting this DB timezone is an optional configuration item.
-        if (isset($config['timezone'])) {
+        if (!empty($config['timezone'])) {
             $connection->prepare(
                 'set time_zone="'.$config['timezone'].'"'
             )->execute();
