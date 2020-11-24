@@ -19,7 +19,6 @@ class TNTSearch
 {
     public $config;
     public $asYouType = false;
-    public $maxDocs = 500;
     public $tokenizer = null;
     public $index = null;
     public $stemmer = null;
@@ -58,6 +57,21 @@ class TNTSearch
     {
         $this->dbh = $dbh;
     }
+
+	/**
+	 * Get all limitations
+	 *
+	 * @return int
+	 */
+	private function getLimits( $target ) {
+
+		$limits = array(
+			'wordlist' => isset( $this->config['wordlistByKeywordLimit'] ) ? absint( $this->config['wordlistByKeywordLimit'] ) : 5000,
+			'doclist'  => isset( $this->config['maxDocs'] ) ? absint( $this->config['maxDocs'] ) : 20000
+		);
+
+		return array_key_exists( $target, $limits ) ? $limits[ $target ] : 0;
+	}
 
     /**
      * Set lang
@@ -155,7 +169,7 @@ class TNTSearch
             $isLastKeyword = ($keywords->count() - 1) == $index;
             $df            = $this->totalMatchingDocuments($term, $isLastKeyword);
             $idf           = log($count / max(1, $df));
-            foreach ($this->getAllDocumentsForKeyword($term, false, $isLastKeyword) as $document) {
+            foreach ($this->getAllDocumentsForKeyword($term, $isLastKeyword) as $document) {
                 $docID             = $document['doc_id'];
                 $tf                = $document['hit_count'];
                 $num               = ($tfWeight + 1) * $tf;
@@ -223,7 +237,7 @@ class TNTSearch
                 if (is_string($right)) {
                     $rightWord = $right;
                     $isLastKeyword = $right == $lastKeyword;
-                    $right         = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true, $isLastKeyword)
+                    $right         = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), $isLastKeyword)
                         ->pluck('doc_id');
 
                     if($this->debug){
@@ -234,7 +248,7 @@ class TNTSearch
                 if (is_string($left)) {
                     $leftWord = $left;
                     $isLastKeyword = $left == $lastKeyword;
-                    $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true, $isLastKeyword)
+                    $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), $isLastKeyword)
                                           ->pluck('doc_id');
 
                     if($this->debug){
@@ -274,7 +288,7 @@ class TNTSearch
                 if (is_string($right)) {
                     $rightWord = $right;
                     $isLastKeyword = $right == $lastKeyword;
-                    $right         = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), true, $isLastKeyword)
+                    $right         = $this->getAllDocumentsForKeyword($this->stemmer->stem($right), $isLastKeyword)
                                           ->pluck('doc_id');
 
                     if($this->debug){
@@ -285,7 +299,7 @@ class TNTSearch
                 if (is_string($left)) {
                     $leftWord = $left;
                     $isLastKeyword = $left == $lastKeyword;
-                    $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), true, $isLastKeyword)
+                    $left          = $this->getAllDocumentsForKeyword($this->stemmer->stem($left), $isLastKeyword)
                         ->pluck('doc_id');
 
                     if($this->debug){
@@ -360,8 +374,7 @@ class TNTSearch
 
         $chars = method_exists($this->tokenizer, 'getSpecialChars') ? $this->tokenizer->getSpecialChars() : array();
 
-        $and = array();
-        $or = array();
+        $pieces = array();
 
         foreach ($keywords as $keyword){
             $hasSpecialChar = false;
@@ -372,19 +385,14 @@ class TNTSearch
                 }
             }
 
-            if($hasSpecialChar){
-                $or[] = $keyword;
-            }else{
-                $and[] = $keyword;
+            if(!$hasSpecialChar){
+	            $pieces[] = $keyword;
             }
         }
 
         $exp = '|';
-        if(!empty($and)){
-            $exp .= implode(' ', $and);
-        }
-        if(!empty($or)){
-            $exp .= '|' . implode('|', $or);
+        if(!empty($pieces)){
+            $exp .= implode(' ', $pieces);
         }
 
         return $exp;
@@ -392,12 +400,11 @@ class TNTSearch
 
     /**
      * @param      $keyword
-     * @param bool $noLimit
      * @param bool $isLastKeyword
      *
      * @return Collection
      */
-    public function getAllDocumentsForKeyword($keyword, $noLimit = false, $isLastKeyword = false)
+    public function getAllDocumentsForKeyword($keyword, $isLastKeyword = false)
     {
 
         $word = $this->getWordlistByKeyword($keyword, $isLastKeyword);
@@ -405,31 +412,29 @@ class TNTSearch
         if ( ! isset($word[0])) {
             return new Collection([]);
         }
-        if ($this->fuzziness) {
-            return $this->getAllDocumentsForFuzzyKeyword($word, $noLimit);
-        }
 
-        return $this->getAllDocumentsForStrictKeyword($word, $noLimit);
+        return $this->getAllDocumentsForWordlist($word);
     }
 
     /**
      * @param      $keyword
-     * @param bool $noLimit
      *
      * @return Collection
      */
-    public function getAllDocumentsForWhereKeywordNot($keyword, $noLimit = false)
+    public function getAllDocumentsForWhereKeywordNot($keyword)
     {
+    	$limit = $this->getLimits('doclist');
         $doclistTable = $this->getTableName('doclist');
 
         $word = $this->getWordlistByKeyword($keyword);
         if ( ! isset($word[0])) {
             return new Collection([]);
         }
-        $query = "SELECT * FROM $doclistTable WHERE doc_id NOT IN (SELECT doc_id FROM $doclistTable WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
-        if ($noLimit) {
-            $query = "SELECT * FROM $doclistTable WHERE doc_id NOT IN (SELECT doc_id FROM $doclistTable WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC";
-        }
+        $query = "SELECT * FROM $doclistTable WHERE doc_id NOT IN (SELECT doc_id FROM $doclistTable WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC LIMIT {$limit}";
+
+        if ( empty( $limit ) ) {
+		    $query = "SELECT * FROM $doclistTable WHERE doc_id NOT IN (SELECT doc_id FROM $doclistTable WHERE term_id = :id) GROUP BY doc_id ORDER BY hit_count DESC";
+	    }
         $stmtDoc = $this->index->prepare($query);
 
         $stmtDoc->bindValue(':id', $word[0]['id']);
@@ -465,7 +470,7 @@ class TNTSearch
 
         $keyword = mb_strtolower($keyword);
         $keywordLike = $keyword;
-        $limit = isset($this->config['wordlistByKeywordLimit']) ? absint($this->config['wordlistByKeywordLimit']) : 5000;
+        $limit = $this->getLimits('wordlist');
 
         $wordlistTable = $this->getTableName('wordlist');
 
@@ -631,13 +636,13 @@ class TNTSearch
 
     /**
      * @param $words
-     * @param $noLimit
      *
      * @return Collection
      */
-    private function getAllDocumentsForFuzzyKeyword($words, $noLimit)
+    private function getAllDocumentsForWordlist($words)
     {
 
+    	$limit = $this->getLimits('doclist');
         $doclistTable = $this->getTableName('doclist');
 
         $binding_params = implode(',', array_fill(0, count($words), '?'));
@@ -650,9 +655,9 @@ class TNTSearch
 
         $query .= " END";
 
-        if ( ! $noLimit) {
-            $query .= " LIMIT {$this->maxDocs}";
-        }
+	    if ( ! empty( $limit ) ) {
+		    $query .= " LIMIT {$limit}";
+	    }
 
         $stmtDoc = $this->index->prepare($query);
 
@@ -662,29 +667,6 @@ class TNTSearch
         }
 
         $stmtDoc->execute($ids);
-
-        return new Collection($stmtDoc->fetchAll(PDO::FETCH_ASSOC));
-    }
-
-    /**
-     * @param $word
-     * @param $noLimit
-     *
-     * @return Collection
-     */
-    private function getAllDocumentsForStrictKeyword($word, $noLimit)
-    {
-
-        $doclistTable = $this->getTableName('doclist');
-
-        $query = "SELECT * FROM $doclistTable WHERE term_id = :id ORDER BY hit_count DESC LIMIT {$this->maxDocs}";
-        if ($noLimit) {
-            $query = "SELECT * FROM $doclistTable WHERE term_id = :id ORDER BY hit_count DESC";
-        }
-        $stmtDoc = $this->index->prepare($query);
-
-        $stmtDoc->bindValue(':id', $word[0]['id']);
-        $stmtDoc->execute();
 
         return new Collection($stmtDoc->fetchAll(PDO::FETCH_ASSOC));
     }

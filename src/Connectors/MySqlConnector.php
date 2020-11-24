@@ -27,7 +27,7 @@ class MySqlConnector extends Connector implements ConnectorInterface
             $connection->exec("use `{$config['database']}`;");
         }
 
-        $collation = 'utf8_unicode_ci';
+        $collation = '';
 
         if (! empty($config['collation'])) {
             $collation = $config['collation'];
@@ -40,7 +40,7 @@ class MySqlConnector extends Connector implements ConnectorInterface
             $charset = $config['charset'];
 
             $names = "set names '{$charset}'".
-                (! is_null($collation) ? " collate '{$collation}'" : '');
+                (! empty($collation) ? " collate '{$collation}'" : '');
 
             $connection->prepare($names)->execute();
         }

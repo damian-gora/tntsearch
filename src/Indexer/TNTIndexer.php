@@ -2,6 +2,7 @@
 
 namespace TeamTNT\TNTSearchASFW\Indexer;
 
+use DgoraWcas\Engines\TNTSearchMySQL\Indexer\SynonymsHandler;
 use Exception;
 use PDO;
 use RecursiveDirectoryIterator;
@@ -13,7 +14,7 @@ use TeamTNT\TNTSearchASFW\Connectors\SQLiteConnector;
 use TeamTNT\TNTSearchASFW\Connectors\SqlServerConnector;
 use TeamTNT\TNTSearchASFW\FileReaders\TextFileReader;
 use TeamTNT\TNTSearchASFW\Stemmer\CroatianStemmer;
-use TeamTNT\TNTSearchASFW\Stemmer\PorterStemmer;
+use TeamTNT\TNTSearchASFW\Stemmer\NoStemmer;
 use TeamTNT\TNTSearchASFW\Support\Collection;
 use TeamTNT\TNTSearchASFW\Support\Tokenizer;
 use TeamTNT\TNTSearchASFW\Support\TokenizerInterface;
@@ -31,6 +32,7 @@ class TNTIndexer
     protected $excludePrimaryKey  = true;
     public $stemmer               = null;
     public $tokenizer             = null;
+    public $synonymsHandler       = null;
     public $stopWords             = [];
     public $filereader            = null;
     public $config                = [];
@@ -39,7 +41,6 @@ class TNTIndexer
     protected $inMemoryTerms      = [];
     protected $decodeHTMLEntities = false;
     public $disableOutput         = false;
-    public $inMemory              = true;
     public $steps                 = 1000;
     public $indexName             = "";
     public $statementsPrepared    = false;
@@ -47,12 +48,15 @@ class TNTIndexer
     public $statementsPostType    = "";
     public $bufforLang            = "";
     public $bufforPostType        = "";
+    public $isMultilingual        = false;
 
     public function __construct()
     {
-        $this->stemmer    = new PorterStemmer;
+        $this->stemmer    = new NoStemmer;
         $this->tokenizer  = new Tokenizer;
+        $this->tokenizer->setContext('indexer');
         $this->filereader = new TextFileReader;
+        $this->synonymsHandler = new SynonymsHandler;
     }
 
     /**
@@ -61,6 +65,7 @@ class TNTIndexer
     public function setTokenizer(TokenizerInterface $tokenizer)
     {
         $this->tokenizer = $tokenizer;
+        $this->tokenizer->setContext('indexer');
     }
 
     public function setStopWords(array $stopWords)
@@ -123,7 +128,8 @@ class TNTIndexer
 
         $query = "SELECT * FROM $wpdb->dgwt_wcas_si_info WHERE ikey = 'stemmer'";
         $stemmer  = $this->index->query($query);
-        $stemmerVal = $stemmer->fetch(PDO::FETCH_ASSOC)['ivalue'];
+        $stemmerData = $stemmer->fetch(PDO::FETCH_ASSOC);
+	    $stemmerVal = is_array($stemmerData) && array_key_exists('ivalue', $stemmerData) ? $stemmerData['ivalue'] : '';
 
         if(empty($stemmerVal)) {
             $this->index->exec("INSERT INTO $wpdb->dgwt_wcas_si_info ( ikey, ivalue) values ( 'stemmer', '$class')");
@@ -257,7 +263,7 @@ class TNTIndexer
     public function run()
     {
 
-        $isMultilingual = Multilingual::isMultilingual();
+        $this->isMultilingual = Multilingual::isMultilingual();
 
         //Builder::log( "[Searchable index] Memory usage: " . memory_get_usage(), false);
         $productProcessed = Builder::getInfo('searchable_processed');
@@ -283,7 +289,7 @@ class TNTIndexer
                 unset($row['post_type']);
             }
 
-            if($isMultilingual && empty($this->bufforLang)) {
+            if($this->isMultilingual && empty($this->bufforLang)) {
                 continue;
             }
 
@@ -401,6 +407,7 @@ class TNTIndexer
     {
         $stemmer = $this->getStemmer();
         $text    = $this->clearText($text);
+        $text    = $this->synonymsHandler->applySynonyms($text);
         $words   = $this->breakIntoTokens($text);
         $stems   = [];
         foreach ($words as $word) {
@@ -408,6 +415,7 @@ class TNTIndexer
                 $stems[] = $stemmer->stem($word);
             }
         }
+
         return $stems;
     }
 
@@ -479,9 +487,9 @@ class TNTIndexer
                 $this->insertWordlistStmt->execute();
 
                 $terms[$key]['id'] = $this->index->lastInsertId();
-                if ($this->inMemory) {
-                    $this->inMemoryTerms[$key] = $terms[$key]['id'];
-                }
+
+                $this->addTermToMemory($key, $terms[$key]['id']);
+
             } catch (\Exception $e) {
 
                 if ($e->getCode() == 23000) {
@@ -489,15 +497,19 @@ class TNTIndexer
                     $this->updateWordlistStmt->bindValue(':hits', $term['hits']);
                     $this->updateWordlistStmt->bindValue(':keyword', $key);
                     $this->updateWordlistStmt->execute();
-                    if (!$this->inMemory || !array_key_exists($key, $this->inMemoryTerms)) {
+
+                    $termIdFromMemory = $this->getTermFromMemory($key);
+
+                    if (empty($termIdFromMemory)) {
                         $this->selectWordlistStmt->bindValue(':keyword', $key);
                         $this->selectWordlistStmt->execute();
-                        $res               = $this->selectWordlistStmt->fetch(PDO::FETCH_ASSOC);
+                        $res = $this->selectWordlistStmt->fetch(PDO::FETCH_ASSOC);
                         $terms[$key]['id'] = $res['id'];
-                    } else {
 
-                        $terms[$key]['id'] = $this->inMemoryTerms[$key];
+                    } else {
+                        $terms[$key]['id'] = $termIdFromMemory;
                     }
+
                 } else {
                     echo "Error while saving wordlist: ".$e->getMessage()."\n";
                 }
@@ -560,6 +572,57 @@ class TNTIndexer
             }
             $fieldCounter++;
         }
+    }
+
+    /**
+     * Add term to memory
+     *
+     * @param string $key
+     * @param int $termID
+     *
+     * @return void
+     */
+    public function addTermToMemory($key, $termID)
+    {
+        if ($this->isMultilingual && !empty($this->bufforLang)) {
+            $this->inMemoryTerms[$this->bufforLang][$key] = $termID;
+        } else {
+            $this->inMemoryTerms[$key] = $termID;
+        }
+    }
+
+    /**
+     * Get term from memory
+     *
+     * @param string $key
+     *
+     * @return int
+     */
+    public function getTermFromMemory($key)
+    {
+
+        $termID = 0;
+
+        if (!empty($key) && is_string($key)) {
+
+            if ($this->isMultilingual && !empty($this->bufforLang)) {
+
+                if (array_key_exists($this->bufforLang, $this->inMemoryTerms)
+                    && array_key_exists($key, $this->inMemoryTerms[$this->bufforLang])
+                ) {
+                    $termID = $this->inMemoryTerms[$this->bufforLang][$key];
+                }
+            } else {
+
+                if (array_key_exists($key, $this->inMemoryTerms)) {
+                    $termID = $this->inMemoryTerms[$key];
+                }
+
+            }
+
+        }
+
+        return $termID;
     }
 
     /**
