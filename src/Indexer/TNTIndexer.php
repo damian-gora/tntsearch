@@ -320,7 +320,7 @@ class TNTIndexer
         }
 
         $ntime = number_format(microtime(true) - $time, 4, '.', '') . ' s';
-        Builder::log("[Searchable index] Processed $counter products in $ntime", false);
+        Builder::log("[Searchable index] Processed $counter objects in $ntime", false);
 
         $this->index->commit();
 
@@ -456,7 +456,6 @@ class TNTIndexer
 
     /**
      * @param $stems
-     * @param stting lang
      *
      * @return array
      */
@@ -677,10 +676,11 @@ class TNTIndexer
 
         if (! empty($this->bufforPostType) && $this->bufforPostType !== 'product') {
             $suffix .= '_' . $this->bufforPostType;
+            //@TODO DB tables don't support "-" in post type name. Better change "-" to "_" than add single quote to all SQL queries
         }
 
         if (! empty($this->bufforLang)) {
-            $suffix .= '_' . $this->bufforLang;
+            $suffix .= '_' . str_replace( '-', '_', $this->bufforLang );
         }
 
         return $suffix;

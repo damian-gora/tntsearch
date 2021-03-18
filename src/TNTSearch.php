@@ -14,6 +14,7 @@ use TeamTNT\TNTSearchASFW\Support\TokenizerInterface;
 use TeamTNT\TNTSearchASFW\Connectors\MySqlConnector;
 use DgoraWcas\Engines\TNTSearchMySQL\Indexer\Searchable\Database;
 use DgoraWcas\Engines\TNTSearchMySQL\Debug\Debugger;
+use DgoraWcas\Multilingual;
 
 class TNTSearch
 {
@@ -83,7 +84,7 @@ class TNTSearch
         if (
             ! empty($lang)
             && is_string($lang)
-            && preg_match('/^[a-z]{2}$/', $lang)
+            && Multilingual::isLangCode($lang)
         ) {
             $this->lang = $lang;
         }
@@ -709,10 +710,11 @@ class TNTSearch
 
         if ( ! empty($this->postType) && $this->postType !== 'product') {
             $suffix .= '_' . $this->postType;
+	        //@TODO DB tables don't support "-" in post type name. Better change "-" to "_" than add single quote to all SQL queries
         }
 
         if ( ! empty($this->lang)) {
-            $suffix .= '_' . $this->lang;
+            $suffix .= '_' . str_replace( '-', '_', $this->lang );
         }
 
         return $suffix;
