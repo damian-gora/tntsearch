@@ -180,7 +180,7 @@ class TNTIndexer
             $wordlistTable = $this->getTableName('wordlist');
 
             $this->insertWordlistStmt = $this->index->prepare("INSERT INTO $wordlistTable (term, num_hits, num_docs) VALUES (:keyword, :hits, :docs)");
-            $this->selectWordlistStmt = $this->index->prepare("SELECT * FROM $wordlistTable WHERE = like :keyword LIMIT 1");
+            $this->selectWordlistStmt = $this->index->prepare("SELECT * FROM $wordlistTable WHERE term = :keyword LIMIT 1");
             $this->updateWordlistStmt = $this->index->prepare("UPDATE $wordlistTable SET num_docs = num_docs + :docs, num_hits = num_hits + :hits WHERE term = :keyword");
             $this->statementsPrepared = true;
             $this->statementsLang = $this->bufforLang;
